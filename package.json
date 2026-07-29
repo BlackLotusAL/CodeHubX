@@ -1,0 +1,43 @@
+{
+  "name": "codehubx-cli",
+  "version": "0.1.0",
+  "description": "面向 AI Agent、自动化脚本和 CI 的 CodeHub 命令行客户端",
+  "type": "module",
+  "bin": {
+    "codehub": "./bin/codehub.js"
+  },
+  "exports": {
+    ".": "./src/cli.js"
+  },
+  "files": [
+    "bin",
+    "docs/product-requirements.md",
+    "docs/api-interfaces.md",
+    "schemas",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "check": "node --check bin/codehub.js && node --check src/cli.js && node --check src/http.js",
+    "prepack": "npm run check && npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "codehub",
+    "cli",
+    "automation",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0"
+  }
+}
