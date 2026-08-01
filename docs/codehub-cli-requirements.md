@@ -286,6 +286,7 @@ UNSUPPORTED_CAPABILITY
 - Agent 环境只注入 Reader Token，并启用本地 `read-only` policy。
 - Token 不允许通过命令行参数传递。
 - `auth login` 仅允许人类在交互式终端中执行，通过方向键选择认证方式，并使用掩码输入 Token 或 DevUC 密码；不提供管道、重定向或命令行参数形式的非交互登录。
+- Agent 执行业务命令时只能非交互读取已保存的单一凭据；凭据缺失必须返回 `AUTH_REQUIRED`，不得触发 Git Credential Manager、浏览器或终端登录提示。
 - clone/fetch 后 remote URL 和 `.git/config` 中不得包含 Token。
 - `auth status` 永远不能显示 Token 原文。
 - debug、HTTP trace、错误和响应头必须执行凭据脱敏。

@@ -77,6 +77,26 @@ CLI 固定使用内置的 CodeHub、DevUC 服务地址和 AppCode，不支持通
 AppCode 变更时需发布新的 CLI 版本。CLI 不创建明文 token 配置文件，也不会输出 token、
 密码或 AppCode。
 
+## 凭据与权限管理
+
+Git Credential Manager（GCM）是 Git for Windows 常见的 Credential Helper。它把密码或
+token 保存到操作系统的安全凭据存储中；它不是 CodeHub 的登录系统，也不应该替 CodeHub
+CLI 弹窗收集认证信息。
+
+CodeHub CLI 的权限流程如下：
+
+1. 人类只在 `codehub auth login` 的终端向导中完成身份认证。
+2. CLI 将认证类型和对应 token 保存为一条 `codehub-cli` Credential Helper 记录；DevUC
+   账号密码不会保存。
+3. `repo`、`mr` 等业务命令以禁止交互的方式读取这一条记录，根据认证类型发送
+   `private-token` 或 `X-Auth-token` Header。
+4. 找不到凭据时直接返回 `AUTH_REQUIRED`，不得打开 GCM、终端或浏览器登录窗口。
+5. CodeHub 服务端根据 token 的实际 scope 决定权限；CLI 将未认证映射为 `AUTH_FAILED`，
+   将权限不足映射为 `FORBIDDEN`，写命令还需要本地 `--confirm-write` 门禁。
+
+旧版本分别保存的 `codehub-private-token` 和 `codehub-x-auth-token` 记录只会在禁止交互的
+条件下读取一次并迁移到新记录，不会触发 GCM 窗口。
+
 成功与错误信封的 JSON Schema 位于
 [`schemas/`](./schemas)。完整产品边界见
 [`docs/product-requirements.md`](./docs/product-requirements.md)。

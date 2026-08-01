@@ -2,45 +2,61 @@ import { spawn } from 'node:child_process';
 import { AUTH_TYPES } from './constants.js';
 import { CliError } from './errors.js';
 
-const USERNAME_BY_AUTH_TYPE = Object.freeze({
-  [AUTH_TYPES.PRIVATE_TOKEN]: 'codehub-private-token',
+const CREDENTIAL_USERNAME = 'codehub-cli';
+const CREDENTIAL_RECORD_PREFIX = 'codehub-cli/v1:';
+const LEGACY_USERNAME_BY_AUTH_TYPE = Object.freeze({
   [AUTH_TYPES.X_AUTH_TOKEN]: 'codehub-x-auth-token',
+  [AUTH_TYPES.PRIVATE_TOKEN]: 'codehub-private-token',
 });
+const CREDENTIAL_COMMAND = Object.freeze([
+  '-c',
+  'credential.interactive=false',
+  '-c',
+  'credential.helper=!f() { echo quit=1; }; f',
+  'credential',
+]);
+const DISABLED_ASKPASS =
+  process.platform === 'win32'
+    ? 'C:\\__codehub-no-interactive-askpass__.exe'
+    : '/__codehub-no-interactive-askpass__';
 
 export class GitCredentialStore {
   constructor({ env = process.env, runGit = defaultRunGit } = {}) {
-    this.env = { ...env };
+    this.env = nonInteractiveEnvironment(env);
     this.runGit = runGit;
   }
 
   async get(host) {
-    // Credential Helper 可能由桌面凭据管理器实现，串行调用可避免并发弹窗或锁冲突。
-    const privateCredential = await this.#fill(
-      host,
-      AUTH_TYPES.PRIVATE_TOKEN,
-    );
-    const authCredential = await this.#fill(host, AUTH_TYPES.X_AUTH_TOKEN);
-
-    if (privateCredential && authCredential) {
-      throw new CliError(
-        'CONFIG_CONFLICT',
-        'Git Credential Helper 中同时存在两种 CodeHub 凭据，请重新登录以消除冲突。',
-      );
+    const stored = await this.#fill(host, CREDENTIAL_USERNAME);
+    if (stored) {
+      return credentialFromRecord(stored.password);
     }
 
-    return privateCredential || authCredential || null;
+    return this.#readAndMigrateLegacyCredential(host);
   }
 
   async save(host, authType, token) {
     await this.#assertHelperConfigured();
-    const username = USERNAME_BY_AUTH_TYPE[authType];
-    if (!username) {
-      throw new CliError('CREDENTIAL_ERROR', '不支持的认证类型。');
-    }
+    await this.#storeCanonical(host, authType, token);
+    await this.#clearUsernames(
+      host,
+      Object.values(LEGACY_USERNAME_BY_AUTH_TYPE),
+    );
+  }
 
+  async clear(host) {
+    await this.#assertGitAvailable();
+    await this.#clearUsernames(host, [
+      CREDENTIAL_USERNAME,
+      ...Object.values(LEGACY_USERNAME_BY_AUTH_TYPE),
+    ]);
+  }
+
+  async #storeCanonical(host, authType, token) {
+    const record = serialiseCredentialRecord(authType, token);
     const approveResult = await this.runGit(
-      ['credential', 'approve'],
-      credentialInput(host, username, token),
+      [...CREDENTIAL_COMMAND, 'approve'],
+      credentialInput(host, CREDENTIAL_USERNAME, record),
       this.env,
     );
 
@@ -48,31 +64,18 @@ export class GitCredentialStore {
       throw credentialFailure();
     }
 
-    const verified = await this.#fill(host, authType);
-    if (!verified || verified.token !== token) {
+    const verified = await this.#fill(host, CREDENTIAL_USERNAME);
+    if (!verified || verified.password !== record) {
       throw new CliError(
         'CREDENTIAL_ERROR',
         'Git Credential Helper 未能持久化凭据。',
       );
     }
-
-    const otherType =
-      authType === AUTH_TYPES.PRIVATE_TOKEN
-        ? AUTH_TYPES.X_AUTH_TOKEN
-        : AUTH_TYPES.PRIVATE_TOKEN;
-    await this.#reject(host, otherType);
   }
 
-  async clear(host) {
-    await this.#assertGitAvailable();
-    await this.#reject(host, AUTH_TYPES.PRIVATE_TOKEN);
-    await this.#reject(host, AUTH_TYPES.X_AUTH_TOKEN);
-  }
-
-  async #fill(host, authType) {
-    const username = USERNAME_BY_AUTH_TYPE[authType];
+  async #fill(host, username) {
     const result = await this.runGit(
-      ['credential', 'fill'],
+      [...CREDENTIAL_COMMAND, 'fill'],
       credentialInput(host, username),
       this.env,
     );
@@ -82,26 +85,73 @@ export class GitCredentialStore {
     }
 
     const parsed = parseCredentialOutput(result.stdout);
-    if (!parsed.password || parsed.username !== username) {
+    if (
+      typeof parsed.password !== 'string' ||
+      parsed.password.length === 0 ||
+      parsed.username !== username
+    ) {
       return null;
     }
 
-    return {
-      authType,
-      token: parsed.password,
-      source: 'credential_helper',
-    };
+    return parsed;
   }
 
-  async #reject(host, authType) {
-    const username = USERNAME_BY_AUTH_TYPE[authType];
-    const result = await this.runGit(
-      ['credential', 'reject'],
-      credentialInput(host, username),
-      this.env,
-    );
+  async #readAndMigrateLegacyCredential(host) {
+    const credentials = [];
+    for (const [authType, username] of Object.entries(
+      LEGACY_USERNAME_BY_AUTH_TYPE,
+    )) {
+      const stored = await this.#fill(host, username);
+      if (stored) {
+        credentials.push({
+          authType,
+          token: stored.password,
+          source: 'credential_helper',
+        });
+      }
+    }
 
-    if (result.code !== 0) {
+    if (credentials.length > 1) {
+      throw new CliError(
+        'CONFIG_CONFLICT',
+        'Git Credential Helper 中同时存在两种旧版 CodeHub 凭据，请重新登录以消除冲突。',
+      );
+    }
+
+    const credential = credentials[0] ?? null;
+    if (credential) {
+      await this.#migrateLegacyCredential(host, credential);
+    }
+    return credential;
+  }
+
+  async #migrateLegacyCredential(host, credential) {
+    try {
+      await this.#storeCanonical(
+        host,
+        credential.authType,
+        credential.token,
+      );
+      await this.#clearUsernames(
+        host,
+        Object.values(LEGACY_USERNAME_BY_AUTH_TYPE),
+      );
+    } catch {
+      // 迁移失败不能阻止本次命令使用仍然有效的旧凭据。
+    }
+  }
+
+  async #clearUsernames(host, usernames) {
+    let failed = false;
+    for (const username of usernames) {
+      const result = await this.runGit(
+        [...CREDENTIAL_COMMAND, 'reject'],
+        credentialInput(host, username),
+        this.env,
+      );
+      failed ||= result.code !== 0;
+    }
+    if (failed) {
       throw credentialFailure();
     }
   }
@@ -164,6 +214,54 @@ function credentialInput(host, username, password) {
   return `${lines.join('\n')}\n\n`;
 }
 
+function serialiseCredentialRecord(authType, token) {
+  if (!Object.values(AUTH_TYPES).includes(authType)) {
+    throw new CliError('CREDENTIAL_ERROR', '不支持的认证类型。');
+  }
+  if (
+    typeof token !== 'string' ||
+    token.length === 0 ||
+    /[\r\n\0]/.test(token)
+  ) {
+    throw new CliError('CREDENTIAL_ERROR', '认证 token 格式无效。');
+  }
+
+  const payload = Buffer.from(
+    JSON.stringify({ auth_type: authType, token }),
+    'utf8',
+  ).toString('base64url');
+  return `${CREDENTIAL_RECORD_PREFIX}${payload}`;
+}
+
+function credentialFromRecord(record) {
+  try {
+    if (!record.startsWith(CREDENTIAL_RECORD_PREFIX)) {
+      throw new Error('UNKNOWN_RECORD_VERSION');
+    }
+    const payload = record.slice(CREDENTIAL_RECORD_PREFIX.length);
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (
+      !Object.values(AUTH_TYPES).includes(parsed.auth_type) ||
+      typeof parsed.token !== 'string' ||
+      parsed.token.length === 0 ||
+      /[\r\n\0]/.test(parsed.token)
+    ) {
+      throw new Error('INVALID_RECORD');
+    }
+    return {
+      authType: parsed.auth_type,
+      token: parsed.token,
+      source: 'credential_helper',
+    };
+  } catch (error) {
+    throw new CliError(
+      'CREDENTIAL_ERROR',
+      'CodeHub 凭据记录无效，请由人类用户重新执行 codehub auth login。',
+      { cause: error },
+    );
+  }
+}
+
 function parseCredentialOutput(output) {
   const parsed = {};
   for (const line of String(output).split(/\r?\n/)) {
@@ -189,12 +287,8 @@ function defaultRunGit(args, input, env) {
     let child;
 
     try {
-      const gitEnvironment = {
-        ...env,
-        GIT_TERMINAL_PROMPT: '0',
-      };
       child = spawn('git', args, {
-        env: gitEnvironment,
+        env: nonInteractiveEnvironment(env),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -219,4 +313,14 @@ function defaultRunGit(args, input, env) {
     });
     child.stdin.end(input);
   });
+}
+
+function nonInteractiveEnvironment(env) {
+  return {
+    ...env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: DISABLED_ASKPASS,
+    GCM_INTERACTIVE: '0',
+    GCM_PROVIDER: 'generic',
+  };
 }

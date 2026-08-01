@@ -51,7 +51,8 @@ export function createApiClient({
           typeof value === 'object' &&
           value.status === 'ok' &&
           typeof value.result?.newToken === 'string' &&
-          value.result.newToken.length > 0,
+          value.result.newToken.length > 0 &&
+          !/[\r\n\0]/.test(value.result.newToken),
       });
     },
 

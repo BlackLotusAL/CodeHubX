@@ -164,18 +164,21 @@ codehub auth login
 - 不显示 token 原文、掩码 token、账号密码或 AppCode。
 - 由于现有 API 没有身份或 token 状态接口，该命令只检查凭据是否存在，不宣称 token 有效，并在 `warnings` 中返回 `CREDENTIAL_NOT_VERIFIED`。
 - 不发起网络请求。
+- Credential Helper 查询必须禁止 GUI、浏览器和终端提示；缺少凭据时直接报告未配置。
 
 #### `codehub auth logout`
 
-- 删除当前 CodeHub host 下由 CLI 保存的 private token 和 X-Auth-token。
+- 删除当前 CodeHub host 下的单一 CodeHub CLI 凭据，并清理旧版本分别保存的 private token 和 X-Auth-token 记录。
 - 不调用远端 token 吊销接口，因为现有 API 未提供该能力。
 
 #### 凭据选择规则
 
 1. 业务命令只读取 Git Credential Helper 中的当前凭据，不从环境变量读取 token。
-2. 每次 `auth login` 只保留最后登录的认证类型，并清除 CLI 为同一 host 保存的另一种 token，避免选择歧义。
-3. Git Credential Helper 中没有凭据时，业务命令返回 `AUTH_REQUIRED`，不发起网络请求；Agent 应提醒人类用户先执行 `codehub auth login`。
-4. Git Credential Helper 不可用或拒绝保存时，登录返回认证配置错误；DevUC 密码和已获取 token 不写入其他文件作为降级。
+2. 当前认证类型和 token 必须保存在同一条、用户名固定为 `codehub-cli` 的版本化凭据记录中。业务命令只查询这条记录一次，不得依次探测不同认证类型。
+3. 每次 `auth login` 原子替换当前记录，因此任意时刻只有一个生效的认证类型。
+4. 所有 Credential Helper 读取都必须同时关闭 Git 终端提示和 Git Credential Manager GUI/TTY 交互。找不到记录时返回 `AUTH_REQUIRED`，不得打开 GCM、浏览器或终端登录提示，也不发起 CodeHub 网络请求；Agent 应提醒人类先执行 `codehub auth login`。
+5. 升级时若没有规范记录，CLI 可以在严格禁止交互的条件下读取旧版 `codehub-private-token` 和 `codehub-x-auth-token` 记录，并将唯一旧记录迁移为规范记录；若两种旧记录并存则返回 `CONFIG_CONFLICT`。
+6. Git Credential Helper 不可用或拒绝保存时，登录返回认证配置错误；DevUC 密码和已获取 token 不写入其他文件作为降级。
 
 ### 5.4 Project 命令
 
@@ -264,7 +267,16 @@ MVP 面向单一公司 CodeHub 环境，固定内置 `api-interfaces.md` 记录�
 - AppCode、token 和密码均视为敏感信息并执行相同级别的输出脱敏。
 - MVP 不创建包含 token 的项目级或用户级明文配置文件。
 
-### 6.2 请求头
+### 6.2 身份认证与权限边界
+
+权限管理分为四层：
+
+1. **人类身份认证**：只发生在 `codehub auth login`。Private Token 由人类输入；DevUC 账号密码仅用于换取 `newToken`。
+2. **本地凭据保管**：Credential Helper 只作为操作系统安全存储的统一接口。Git Credential Manager 是可能的 Helper 实现，不参与 CodeHub 登录，也不得自行提示用户。
+3. **业务请求认证**：CLI 从单一凭据记录读取认证类型和 token，并互斥发送 `private-token` 或 `X-Auth-token` Header。该过程始终非交互。
+4. **服务端授权与本地策略**：CodeHub 服务端根据 token scope 决定资源权限；CLI 不提升或模拟服务端权限。401 映射为 `AUTH_FAILED`，403 映射为 `FORBIDDEN`；评论创建还必须通过 `--confirm-write` 本地门禁。
+
+### 6.3 请求头
 
 DevUC 请求必须携带：
 
@@ -289,7 +301,7 @@ X-Auth-token: <token>
 
 两个认证 Header 不得同时发送。凭据不得进入 URL、query string 或请求体。
 
-### 6.3 HTTP 行为
+### 6.4 HTTP 行为
 
 - 默认单次请求超时为 30 秒。
 - GET 请求遇到网络错误、HTTP 429 或可重试的 5xx 时，最多额外重试 2 次。
@@ -413,6 +425,8 @@ UNSUPPORTED_CAPABILITY
 - 登录向导必须要求 stdin 和提示输出均连接真实交互式终端，并兼容 Windows PowerShell 和 Linux 终端。
 - DevUC 密码不得落盘、缓存或写入 Git Credential Helper。
 - CLI 调用 Git Credential Helper 时必须通过 stdin 传递协议数据，不把 token 拼接进子进程参数。
+- Credential Helper 的读取必须设置 Git 与 GCM 的非交互模式；业务命令不得触发凭据输入、GUI 或浏览器窗口。
+- 规范凭据只保存一条记录，认证类型与 token 同步替换，禁止通过逐个查询不同用户名来猜测认证方式。
 - 日志、错误、HTTP trace、测试快照和异常堆栈必须统一执行凭据脱敏。
 - remote URL、输出结果和错误中的 URL 不得包含凭据。
 - 默认不提供 `--insecure`、跳过证书验证或明文 HTTP 的选项。
@@ -488,8 +502,9 @@ UNSUPPORTED_CAPABILITY
 - 非 TTY、`--no-input` 和旧的非交互登录参数均在读取凭据前被拒绝；`Ctrl+C` 返回退出码 `130`。
 - DevUC 密码在换取 token 后不可从文件、日志、错误或 Credential Helper 中检索到。
 - 业务命令不读取 token 环境变量，只使用 Credential Helper 中的凭据。
-- Credential Helper 中没有凭据时返回 `AUTH_REQUIRED`，且不发起网络请求。
-- `auth login` 切换认证类型后不会留下两个可选的持久化凭据。
+- 规范凭据读取只调用一次 Helper，并强制关闭 Git/GCM 交互；没有凭据时返回 `AUTH_REQUIRED`，不弹窗且不发起网络请求。
+- `auth login` 切换认证类型后只保留一条包含认证类型和 token 的规范凭据。
+- 旧版双用户名凭据在无交互条件下迁移，缺失项不得触发 GCM 窗口。
 - Git 或 Credential Helper 不可用时返回明确错误且不降级为明文文件。
 - `auth status` 和 `auth logout` 不泄露敏感值。
 
