@@ -39,7 +39,7 @@ CodeHub CLI 的定位是：
 2. **能力真实**：只承诺现有 API 能保证的行为，不用客户端逻辑伪装服务端不具备的原子性。
 3. **凭据最小暴露**：token 和密码不通过命令行参数传递，不进入日志、错误或结果。
 4. **写入显式授权**：唯一写命令每次调用都必须显式确认，且不自动重试。
-5. **保持薄封装**：MVP 保持服务端字段名称，避免过早建立庞大的独立领域模型。
+5. **检视字段最小化**：MVP 将服务端响应投影为稳定的代码检视字段白名单，不向 Agent 暴露 reviewer、assignee、权限、成员数等无关字段。
 
 ## 3. MVP 目标与成功标准
 
@@ -185,14 +185,14 @@ codehub auth login
 #### `codehub repo list <group-id>`
 
 - 调用 Group Project 列表 API。
-- `data` 为服务端返回的 Project 数组。
+- `data` 为规范化仓库数组，仅包含仓库 ID、完整路径、SSH/HTTPS clone URL、归档状态和更新时间。
 - 当前 API 文档未确认分页参数、分页 Header 和默认上限，因此结果必须包含 `PARTIAL_LIST_POSSIBLE` warning。
 - CLI 不自动追加未经文档确认的 `page`、`per_page` 或 cursor 参数。
 
 #### `codehub repo view <project-id>`
 
 - 调用单个 Project 详情 API。
-- `data` 为服务端返回的 Project 对象。
+- `data` 为规范化仓库详情，在列表字段基础上增加默认分支和 Web URL。
 - 不额外查询默认分支 SHA、成员或其他链接资源。
 
 ### 5.5 Merge Request 读取命令
@@ -204,10 +204,10 @@ codehub mr list -R <project-id> \
   [--state open|closed|locked|merged|all]
 ```
 
-- `--state` 默认值为 `all`。
+- `--state` 默认值为 `open`；需要历史记录时显式使用 `--state all`。
 - CLI 将 `open` 映射为服务端参数 `opened`，其余值原样映射。
 - 非法状态在本地返回 `INVALID_ARGUMENT`。
-- `data` 为服务端返回的 MR 数组。
+- `data` 为规范化 MR 摘要数组，仅包含定位、状态、标题、作者、源/目标分支、更新时间和 Web URL。
 - 与 `repo list` 相同，结果必须包含 `PARTIAL_LIST_POSSIBLE` warning。
 
 #### `codehub mr view`
@@ -217,7 +217,7 @@ codehub mr view <iid> -R <project-id>
 ```
 
 - 调用单个 MR 详情 API。
-- `data` 为服务端返回的 MR 对象。
+- `data` 为规范化 MR 详情，在摘要字段基础上增加描述、标签、创建时间和变更规模。
 - 不隐式获取 Commit、diff 或评论。
 
 #### `codehub mr commits`
@@ -227,7 +227,7 @@ codehub mr commits <iid> -R <project-id>
 ```
 
 - 调用 MR Commit 列表 API。
-- `data` 为服务端返回的 Commit 数组。
+- `data` 为规范化 Commit 数组，包含完整 SHA、标题、消息、作者、提交者、时间和父 SHA。
 - 不调用本地 Git，也不检查 Commit 是否已存在于本地仓库。
 
 ### 5.6 创建 MR 评论
@@ -250,6 +250,7 @@ codehub mr comment create <iid> \
 - 无论是否指定 `--dry-run`，都必须显式提供 `--confirm-write`；缺少时返回 `POLICY_DENIED`。
 - `--dry-run` 只校验参数、读取正文并生成脱敏请求预览，不发送任何 HTTP 请求。
 - dry-run 输出正文 UTF-8 字节数、目标 Project/MR、severity 和将使用的认证类型，但不回显正文或凭据。
+- 实际成功结果仅包含评论 ID、目标仓库/MR、severity、resolved 和 Web URL；服务端返回的 notes、reviewer、assignee、proposer 等字段不得输出。
 - 实际 POST 请求绝不自动重试。
 - 网络中断或超时发生在请求发出之后、无法判断服务端是否已创建评论时，返回 `WRITE_RESULT_UNKNOWN`，并明确标记 `retryable: false`。
 - 成功结果必须包含 `UNSAFE_WRITE_GUARANTEES` warning，说明服务端没有条件写和幂等保障，CLI 无法保证评论未发布到过期 head，也无法保证人工重试不产生重复评论。
@@ -335,15 +336,27 @@ JSON 成功结果固定为一个对象：
 | `schema_version` | string | MVP 固定为 `codehub.cli/v1` |
 | `command` | string | 稳定命令标识，如 `repo.list`、`mr.comment.create` |
 | `request_id` | string | 调用方提供或 CLI 生成 |
-| `data` | object/array | 命令结果；保留服务端字段名称 |
+| `data` | object/array | 命令结果；使用下述稳定领域字段白名单 |
 | `warnings` | array | 非致命限制或风险，不能为空时才包含对应项 |
+
+稳定数据白名单：
+
+- `repo.list`：`repo_id`、`full_name`、`clone_urls.{ssh,https}`、`archived`、`updated_at`。
+- `repo.view`：repo.list 字段，加 `default_branch`、`web_url`。
+- `mr.list`：`repo_id`、`mr_id`、`iid`、`title`、`state`、`is_draft`、`author.{id,username,name,type}`、`source_branch`、`target_branch`、`updated_at`、`web_url`。
+- `mr.view`：mr.list 字段，加 `description`、`labels`、`created_at`、`changes.{files,additions,deletions}`。
+- `mr.commits`：`sha`、`title`、`message`、`author.{name,email}`、`committer.{name,email}`、`authored_at`、`committed_at`、`parent_shas`。
+- `mr.comment.create`：实际写入返回 `comment_id`、`repo_id`、`mr_iid`、`severity`、`resolved`、`web_url`；dry-run 返回 `dry_run`、`repo_id`、`mr_iid`、`severity`、`body_utf8_bytes`、`authentication_type`。
 
 数据转换规则：
 
-- API 已记录的 ID 字段转换为十进制字符串，包括 Project、MR、Discussion、用户、命名空间等 ID。
-- Commit SHA 和 `parent_ids` 保持字符串。
-- 已知字段保持服务端字段名称，不执行 snake_case/camelCase 转换。
-- 服务端新增的未知字段原样保留，不因未知字段导致命令失败。
+- 所有平台 ID 转换为字符串；Commit SHA 与父 SHA 保持完整字符串。
+- 统一使用 snake_case 领域字段名，服务端新增或无关字段一律丢弃，但不得因此导致命令失败。
+- 每种命令的数据字段固定存在；服务端未提供的值使用 `null`，human 模式隐藏空值。
+- `full_name` 依次回退到 `path_with_namespace`、`name_with_namespace`、`name`；`updated_at` 可回退到 `last_activity_at`；`is_draft` 可回退到 `work_in_progress`。
+- 合法的 `changes_count` 数字字符串转换为数字；服务端未返回 committer 时保持 `null`，不得以 author 替代。
+- reviewer、assignee、权限、成员数、Issue 统计和其他非检视字段不得进入 JSON 或 human 输出。
+- 成功和错误 JSON 都使用两空格缩进、固定字段顺序、一个结尾换行；TTY 和重定向时格式一致。
 - JSON 模式不输出进度条、颜色、ANSI 控制符、调试日志或附加说明。
 
 标准 warning：
@@ -393,6 +406,7 @@ UNSUPPORTED_CAPABILITY
 ```
 
 错误消息不得包含请求 Header、凭据、完整 DevUC 响应或可能携带凭据的 URL。
+错误对象与成功对象相同，始终使用两空格缩进并以一个换行结束。
 
 ### 7.3 退出码
 
@@ -413,7 +427,11 @@ UNSUPPORTED_CAPABILITY
 
 ### 7.4 human 输出
 
-- `--output human` 面向人工查看，可使用表格和键值列表。
+- `--output human` 面向人工查看，采用无边框对齐表格、紧凑条目和详情分区。
+- 仓库列表同时展示 SSH/HTTPS clone URL；MR 列表展示 IID、状态、标题、作者、源/目标分支和更新时间；Commit 使用包含父 SHA 的紧凑卡片。
+- 列表时间使用相对时间，超过 30 天显示日期；详情时间统一显示 RFC 3339 UTC。
+- 真实 TTY 可使用克制状态色；重定向、`NO_COLOR`、`CLICOLOR=0`、`TERM=dumb` 时不输出 ANSI，`CLICOLOR_FORCE` 可强制 human 颜色。
+- 输出根据终端宽度换行或截断，中文、全角字符和 Emoji 必须按实际显示宽度对齐。
 - human 模式失败信息写入 stderr，退出码与 JSON 模式一致。
 - human 输出不得显示 token、AppCode、密码或完整认证 Header。
 - human 格式不承诺供程序解析；Agent 和脚本必须使用默认 JSON。
@@ -445,9 +463,9 @@ UNSUPPORTED_CAPABILITY
 
 ### 9.2 兼容性
 
-- `codehub.cli/v1` 内不得删除、重命名或改变既有信封字段语义。
+- 本文定义的字段白名单为 `codehub.cli/v1` 的正式命令数据契约；后续 v1 不得删除、重命名或改变既有信封与白名单字段语义。
 - minor 版本可以新增可选字段、warning 或 capability。
-- 服务端增加未知响应字段时 CLI 不得崩溃。
+- 服务端增加未知响应字段时 CLI 不得崩溃，也不得自动将其暴露到输出。
 - 服务端返回未知枚举时应保留原始值，不擅自映射为已知值。
 
 ### 9.3 稳定性与并发
@@ -493,7 +511,8 @@ UNSUPPORTED_CAPABILITY
 - DevUC 与 CodeHub 使用各自的 AppCode。
 - private token 和 X-Auth-token 使用正确且互斥的 Header。
 - 正常响应、非 JSON 响应、缺失字段和 HTTP 错误均映射到预期结果。
-- 已知 ID 转换为字符串，未知字段得到保留。
+- 每个命令只输出检视字段白名单，平台 ID 转换为字符串，缺失字段固定为 `null`。
+- 包含 reviewer、assignee、权限、统计和未知字段的完整响应 fixture 不得将这些字段泄漏到输出。
 
 ### 11.2 认证与凭据测试
 
@@ -510,9 +529,10 @@ UNSUPPORTED_CAPABILITY
 ### 11.3 机器协议测试
 
 - 每个命令的成功结果通过发布版本对应的 JSON Schema 校验。
+- 成功与错误 JSON 均验证两空格缩进、完整单文档、固定结尾换行和无 ANSI。
 - 所有失败场景验证 stdout 为空、stderr 只有一个错误对象。
 - 每个稳定错误码映射到约定退出码。
-- human 输出不影响 JSON 行为且不包含敏感信息。
+- human 输出覆盖 TTY 状态色、`NO_COLOR`、80/120 列布局、相对时间、详情 UTC 时间且不包含敏感信息。
 - 中文、Emoji、Markdown、引号、反斜线、换行和 Shell 特殊字符能安全通过 JSON 协议。
 
 ### 11.4 网络与重试测试
@@ -556,7 +576,7 @@ UNSUPPORTED_CAPABILITY
 | DevUC token 有效期未知 | Token 可能在保存后失效 | `auth status` 只报告本地凭据状态；业务请求收到 401 时返回认证错误 |
 | Git Credential Helper 未配置 | 无法持久化登录凭据 | 返回明确配置错误；由人类完成 Helper 配置和登录 |
 | AppCode 或服务地址变化 | 内置配置失效 | 更新内置值、通过回归测试后发布新版本 |
-| 服务端响应字段变化 | Agent 解析失败 | 稳定外层信封、保留未知字段、维护 Schema 兼容测试 |
+| 服务端响应字段变化 | Agent 解析失败 | 使用固定检视字段投影、缺失值返回 `null`、维护逐命令 Schema 兼容测试 |
 
 ## 14. 假设
 

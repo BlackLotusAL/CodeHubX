@@ -25,6 +25,6 @@ test('真实进程可执行 version 和 human capabilities', async () => {
     '--output',
     'human',
   ]);
-  assert.match(human.stdout, /写入必须确认: 是/);
+  assert.match(human.stdout, /写入必须确认\s+是/);
   assert.equal(human.stderr, '');
 });

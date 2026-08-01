@@ -21,7 +21,7 @@
   "scripts": {
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check bin/codehub.js && node --check src/cli.js && node --check src/api.js && node --check src/http.js && node --check src/credentials.js && node --check src/prompts.js",
+    "check": "node --check bin/codehub.js && node --check src/cli.js && node --check src/program.js && node --check src/output.js && node --check src/transform.js && node --check src/api.js && node --check src/http.js && node --check src/credentials.js && node --check src/prompts.js",
     "prepack": "npm run check && npm test"
   },
   "engines": {
@@ -36,7 +36,9 @@
   "license": "MIT",
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
-    "commander": "^14.0.3"
+    "commander": "^14.0.3",
+    "string-width": "^8.2.2",
+    "wrap-ansi": "^10.0.0"
   },
   "devDependencies": {
     "ajv": "^8.20.0"

@@ -22,7 +22,15 @@ import {
 } from './output.js';
 import { createProgram } from './program.js';
 import { runLoginPrompt } from './prompts.js';
-import { sanitiseForOutput, stringifyKnownIds } from './transform.js';
+import {
+  projectCommentResult,
+  projectCommitList,
+  projectMergeRequestList,
+  projectMergeRequestView,
+  projectRepoList,
+  projectRepoView,
+  sanitiseForOutput,
+} from './transform.js';
 import {
   isValidRequestId,
   parsePositiveId,
@@ -36,16 +44,28 @@ import {
 
 export async function runCli(argv, dependencies = {}) {
   const env = dependencies.env ?? process.env;
+  const stdoutStream = dependencies.stdoutStream ?? process.stdout;
+  const stderrStream = dependencies.stderrStream ?? process.stderr;
   const io = dependencies.io ?? {
-    stdout: (value) => process.stdout.write(value),
-    stderr: (value) => process.stderr.write(value),
+    stdout: (value) => stdoutStream.write(value),
+    stderr: (value) => stderrStream.write(value),
   };
   const readStdin =
     dependencies.readStdin ?? (() => readStream(dependencies.stdin ?? process.stdin));
   const stdin = dependencies.stdin ?? process.stdin;
-  const stderrStream = dependencies.stderrStream ?? process.stderr;
   const interactive =
     dependencies.interactive ?? Boolean(stdin.isTTY && stderrStream.isTTY);
+  const outputOptions = {
+    env,
+    stdoutIsTTY:
+      dependencies.stdoutIsTTY ??
+      (dependencies.io ? false : Boolean(stdoutStream.isTTY)),
+    stderrIsTTY:
+      dependencies.stderrIsTTY ??
+      (dependencies.io ? false : Boolean(stderrStream.isTTY)),
+    columns: dependencies.columns ?? stdoutStream.columns ?? 100,
+    now: dependencies.now ?? (() => new Date()),
+  };
   const promptLogin =
     dependencies.promptLogin ??
     (() =>
@@ -70,6 +90,7 @@ export async function runCli(argv, dependencies = {}) {
       io,
       fallbackOutput,
       errorEnvelope(fallbackCommand, fallbackRequestId, error),
+      outputOptions,
     );
     return error.exitCode;
   }
@@ -111,9 +132,10 @@ export async function runCli(argv, dependencies = {}) {
       successEnvelope(
         command,
         requestId,
-        stringifyKnownIds(safeData),
+        safeData,
         warnings,
       ),
+      outputOptions,
     );
   };
 
@@ -134,6 +156,7 @@ export async function runCli(argv, dependencies = {}) {
       io,
       fallbackOutput,
       errorEnvelope(fallbackCommand, fallbackRequestId, error),
+      outputOptions,
     );
     return error.exitCode;
   }
@@ -201,7 +224,7 @@ async function executeCommand(context) {
       const api = await authenticatedApi(context);
       const result = await api.listProjects(groupId);
       return {
-        data: result.data,
+        data: projectRepoList(result.data),
         warnings: [
           WARNING.PARTIAL_LIST_POSSIBLE,
           ...retryWarnings(result.retryCount),
@@ -214,7 +237,7 @@ async function executeCommand(context) {
       const api = await authenticatedApi(context);
       const result = await api.viewProject(projectId);
       return {
-        data: result.data,
+        data: projectRepoView(result.data, projectId),
         warnings: retryWarnings(result.retryCount),
       };
     }
@@ -225,7 +248,7 @@ async function executeCommand(context) {
       const api = await authenticatedApi(context);
       const result = await api.listMergeRequests(projectId, state);
       return {
-        data: result.data,
+        data: projectMergeRequestList(result.data, projectId),
         warnings: [
           WARNING.PARTIAL_LIST_POSSIBLE,
           ...retryWarnings(result.retryCount),
@@ -239,7 +262,7 @@ async function executeCommand(context) {
       const api = await authenticatedApi(context);
       const result = await api.viewMergeRequest(projectId, iid);
       return {
-        data: result.data,
+        data: projectMergeRequestView(result.data, projectId),
         warnings: retryWarnings(result.retryCount),
       };
     }
@@ -250,7 +273,7 @@ async function executeCommand(context) {
       const api = await authenticatedApi(context);
       const result = await api.listMergeRequestCommits(projectId, iid);
       return {
-        data: result.data,
+        data: projectCommitList(result.data),
         warnings: retryWarnings(result.retryCount),
       };
     }
@@ -373,8 +396,8 @@ async function createComment(context) {
     return {
       data: {
         dry_run: true,
-        project_id: projectId,
-        merge_request_iid: iid,
+        repo_id: projectId,
+        mr_iid: iid,
         severity,
         body_utf8_bytes: Buffer.byteLength(body, 'utf8'),
         authentication_type: credential.authType,
@@ -389,7 +412,11 @@ async function createComment(context) {
     severity,
   );
   return {
-    data: result.data,
+    data: projectCommentResult(result.data, {
+      repoId: projectId,
+      mrIid: iid,
+      severity,
+    }),
     warnings: [WARNING.UNSAFE_WRITE_GUARANTEES],
   };
 }

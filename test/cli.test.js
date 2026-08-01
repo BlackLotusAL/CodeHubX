@@ -7,6 +7,11 @@ import { runCli } from '../src/cli.js';
 import { AUTH_TYPES, DEFAULTS } from '../src/constants.js';
 import { CliError } from '../src/errors.js';
 import {
+  commentApiFixture,
+  mergeRequestApiFixture,
+  repoApiFixture,
+} from '../test-support/fixtures.js';
+import {
   captureIo,
   jsonResponse,
   MemoryCredentialStore,
@@ -32,6 +37,10 @@ async function invoke(argv, overrides = {}) {
     promptLogin: overrides.promptLogin,
     sleep: overrides.sleep ?? (async () => {}),
     random: () => 0,
+    stdoutIsTTY: overrides.stdoutIsTTY,
+    stderrIsTTY: overrides.stderrIsTTY,
+    columns: overrides.columns,
+    now: overrides.now,
   });
 
   return {
@@ -298,13 +307,7 @@ test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning
     env: { CODEHUB_PRIVATE_TOKEN: 'ignored-environment-token' },
     fetchImpl: async (url, init) => {
       request = { url: String(url), init };
-      return jsonResponse([
-        {
-          id: 9001,
-          name: 'agent-tools',
-          namespace: { id: 8, name: 'platform' },
-        },
-      ]);
+      return jsonResponse([repoApiFixture]);
     },
   });
   const envelope = JSON.parse(result.stdout);
@@ -316,8 +319,19 @@ test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning
   );
   assert.equal(request.init.headers['private-token'], 'test-token');
   assert.equal(request.init.headers['X-Auth-token'], undefined);
-  assert.equal(envelope.data[0].id, '9001');
-  assert.equal(envelope.data[0].namespace.id, '8');
+  assert.deepEqual(envelope.data, [
+    {
+      repo_id: '9001',
+      full_name: 'platform/agent-tools',
+      clone_urls: {
+        ssh: 'git@codehub.test:platform/agent-tools.git',
+        https: 'https://codehub.test/platform/agent-tools.git',
+      },
+      archived: false,
+      updated_at: '2026-07-31T08:00:00Z',
+    },
+  ]);
+  assert.doesNotMatch(result.stdout, /reviewer|member_count|unknown_server_field/);
   assert.equal(envelope.warnings[0].code, 'PARTIAL_LIST_POSSIBLE');
 });
 
@@ -332,34 +346,48 @@ test('服务端响应即使回显凭据或含凭据 URL，也不会泄漏到输�
       jsonResponse({
         id: 42,
         echoed: 'stored-secret-token',
+        path_with_namespace: 'group/repo',
         http_url_to_repo:
           'https://oauth2:another-secret@codehub.test/group/repo.git',
       }),
   });
   const data = JSON.parse(result.stdout).data;
 
-  assert.equal(data.echoed, '[REDACTED]');
+  assert.equal('echoed' in data, false);
   assert.equal(
-    data.http_url_to_repo,
+    data.clone_urls.https,
     'https://codehub.test/group/repo.git',
   );
   assert.doesNotMatch(result.stdout, /stored-secret-token|another-secret/);
 });
 
-test('mr list 支持命令后的全局 -R，并把 open 映射为 opened', async () => {
-  let url;
-  const result = await invoke(['mr', 'list', '-R', '77', '--state', 'open'], {
+test('mr list 默认查询 opened，显式 --state all 仍可查询历史记录', async () => {
+  const urls = [];
+  const result = await invoke(['mr', 'list', '-R', '77'], {
     fetchImpl: async (input) => {
-      url = String(input);
+      urls.push(String(input));
+      return jsonResponse([{ ...mergeRequestApiFixture, project_id: 77 }]);
+    },
+  });
+  const all = await invoke(['mr', 'list', '-R', '77', '--state', 'all'], {
+    fetchImpl: async (input) => {
+      urls.push(String(input));
       return jsonResponse([]);
     },
   });
 
   assert.equal(result.code, 0);
+  assert.equal(all.code, 0);
   assert.equal(
-    url,
+    urls[0],
     `${DEFAULTS.apiBaseUrl}/projects/77/isource/merge_requests?state=opened`,
   );
+  assert.equal(
+    urls[1],
+    `${DEFAULTS.apiBaseUrl}/projects/77/isource/merge_requests?state=all`,
+  );
+  assert.equal(JSON.parse(result.stdout).data[0].repo_id, '77');
+  assert.doesNotMatch(result.stdout, /reviewer|assignee/);
 });
 
 test('Project、MR 详情与 Commit 的 API path 完整映射', async () => {
@@ -402,7 +430,8 @@ test('JSON 失败时 stdout 为空且 stderr 只有一个错误对象', async ()
 
   assert.equal(result.code, 2);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr.trim().split('\n').length, 1);
+  assert.equal(result.stderr, `${JSON.stringify(error, null, 2)}\n`);
+  assert.doesNotMatch(result.stderr, /\u001b\[/i);
   assert.equal(error.command, 'mr.view');
   assert.equal(error.error.code, 'INVALID_ARGUMENT');
 });
@@ -412,8 +441,9 @@ test('只有命令组时不会把 Commander 帮助混入 JSON 错误', async () 
 
   assert.equal(result.code, 2);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr.trim().split('\n').length, 1);
-  assert.equal(JSON.parse(result.stderr).error.code, 'INVALID_ARGUMENT');
+  const error = JSON.parse(result.stderr);
+  assert.equal(result.stderr, `${JSON.stringify(error, null, 2)}\n`);
+  assert.equal(error.error.code, 'INVALID_ARGUMENT');
 });
 
 test('重复 body-file 在本地拒绝且不读取文件', async () => {
@@ -524,8 +554,12 @@ test('评论 dry-run 不发请求、不回显正文并报告 UTF-8 字节数', a
 
   assert.equal(result.code, 0);
   assert.equal(requests, 0);
+  assert.equal(data.repo_id, '2');
+  assert.equal(data.mr_iid, '9');
   assert.equal(data.body_utf8_bytes, Buffer.byteLength(body));
   assert.equal(data.severity, 'major');
+  assert.equal('project_id' in data, false);
+  assert.equal('merge_request_iid' in data, false);
   assert.doesNotMatch(result.stdout, /不要回显/);
 });
 
@@ -552,7 +586,7 @@ test('评论 POST 正文保持原样，成功结果包含安全 warning', async 
       fetchImpl: async (url, init) => {
         request = { url: String(url), init };
         return jsonResponse({
-          id: 'discussion-1',
+          ...commentApiFixture,
           project_id: 2,
           severity: 'suggestion',
         });
@@ -567,7 +601,16 @@ test('评论 POST 正文保持原样，成功结果包含安全 warning', async 
     body,
     severity: 'suggestion',
   });
-  assert.equal(envelope.data.project_id, '2');
+  assert.deepEqual(envelope.data, {
+    comment_id: 'discussion-1',
+    repo_id: '2',
+    mr_iid: '9',
+    severity: 'suggestion',
+    resolved: false,
+    web_url:
+      'https://codehub.test/platform/agent-tools/-/merge_requests/17#note_1',
+  });
+  assert.doesNotMatch(result.stdout, /notes|reviewer|assignee|proposer/);
   assert.equal(envelope.warnings[0].code, 'UNSAFE_WRITE_GUARANTEES');
 });
 
@@ -606,6 +649,7 @@ test('human 模式逐次提示 GET 重试且最终输出可读结果', async () 
 
   assert.equal(result.code, 0);
   assert.match(result.stderr, /读取请求重试 1\/2/);
-  assert.match(result.stdout, /name: project/);
+  assert.match(result.stdout, /project/);
+  assert.match(result.stdout, /仓库 ID\s+2/);
   assert.match(result.stdout, /REQUEST_RETRIED/);
 });

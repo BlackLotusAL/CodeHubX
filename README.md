@@ -48,7 +48,8 @@ CLI 会显示一个交互式登录向导：
 ```bash
 codehub repo list 123
 codehub repo view 456
-codehub mr list -R 456 --state open
+codehub mr list -R 456
+codehub mr list -R 456 --state all  # 显式查询历史 MR
 codehub mr view 17 -R 456
 codehub mr commits 17 -R 456
 ```
@@ -64,8 +65,18 @@ codehub mr comment create 17 \
   --dry-run
 ```
 
-所有业务命令默认只向 stdout 输出一个 JSON 成功对象。失败时 stdout 为空，
-stderr 只输出一个 JSON 错误对象。人工查看可增加 `--output human`。
+`mr list` 默认只查询开放 MR。所有业务命令默认只向 stdout 输出一个使用两空格
+缩进的 JSON 成功对象；失败时 stdout 为空，stderr 只输出一个同样格式化的 JSON
+错误对象。人工查看可增加 `--output human`。
+
+JSON 只包含代码检视所需的稳定字段。例如仓库结果包含 SSH/HTTPS clone URL，MR
+结果包含 IID、状态、作者、分支和更新时间，Commit 结果包含完整 SHA、消息、作者、
+提交者、时间和父 SHA。reviewer、assignee、权限、成员数和其他服务端附加字段不会输出；
+服务端缺失的规范字段以 `null` 表示。
+
+human 模式使用无边框对齐布局、相对时间和终端宽度适配。颜色只在真实 TTY 中启用，
+并遵守常见的 `NO_COLOR`、`CLICOLOR`、`CLICOLOR_FORCE` 和 `TERM=dumb` 约定；这些变量
+只影响显示颜色，不会覆盖服务地址、AppCode 或认证配置。
 
 ## 配置
 

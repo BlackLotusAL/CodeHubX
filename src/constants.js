@@ -28,5 +28,3 @@ export const WARNING = Object.freeze({
       '服务端不支持条件写和幂等；无法保证评论对应最新 head，也无法阻止人工重试产生重复评论。',
   },
 });
-
-export const ID_FIELDS = new Set(['id', 'iid', 'project_id']);

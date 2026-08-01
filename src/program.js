@@ -62,8 +62,8 @@ export function createProgram({ execute, io }) {
   const mr = program.command('mr').description('查询 Merge Request');
   mr
     .command('list')
-    .description('列出 Project 中的 Merge Request')
-    .option('--state <state>', 'open|closed|locked|merged|all', 'all')
+    .description('列出 Project 中的 Merge Request（默认仅开放）')
+    .option('--state <state>', 'open|closed|locked|merged|all', 'open')
     .action(action('mr.list'));
 
   mr
