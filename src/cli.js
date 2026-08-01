@@ -10,11 +10,10 @@ import {
 } from './constants.js';
 import {
   GitCredentialStore,
-  hasEnvironmentCredential,
   resolveCredential,
 } from './credentials.js';
 import { CliError, toCliError } from './errors.js';
-import { readBodyFile, readHiddenInput, readStream } from './input.js';
+import { readBodyFile, readStream } from './input.js';
 import {
   errorEnvelope,
   successEnvelope,
@@ -22,12 +21,12 @@ import {
   writeSuccess,
 } from './output.js';
 import { createProgram } from './program.js';
+import { runLoginPrompt } from './prompts.js';
 import { sanitiseForOutput, stringifyKnownIds } from './transform.js';
 import {
   isValidRequestId,
   parsePositiveId,
   parseTimeout,
-  stripOneTrailingNewline,
   validateAccount,
   validateOutput,
   validateRequestId,
@@ -43,19 +42,24 @@ export async function runCli(argv, dependencies = {}) {
   };
   const readStdin =
     dependencies.readStdin ?? (() => readStream(dependencies.stdin ?? process.stdin));
-  const hiddenInput =
-    dependencies.readHidden ??
+  const stdin = dependencies.stdin ?? process.stdin;
+  const stderrStream = dependencies.stderrStream ?? process.stderr;
+  const interactive =
+    dependencies.interactive ?? Boolean(stdin.isTTY && stderrStream.isTTY);
+  const promptLogin =
+    dependencies.promptLogin ??
     (() =>
-      readHiddenInput({
-        input: dependencies.stdin ?? process.stdin,
-        output: dependencies.stderrStream ?? process.stderr,
+      runLoginPrompt({
+        input: stdin,
+        output: stderrStream,
         signal: dependencies.signal,
+        env,
       }));
   const credentialStore =
     dependencies.credentialStore ?? new GitCredentialStore({ env });
   const fallbackRequestId = inferredRequestId(argv) || createRequestId();
-  const fallbackOutput = inferredOutput(argv);
   const fallbackCommand = inferCommand(argv);
+  const fallbackOutput = inferredOutput(argv, fallbackCommand);
 
   if (argv.length === 0) {
     const error = new CliError(
@@ -71,12 +75,12 @@ export async function runCli(argv, dependencies = {}) {
   }
 
   const execute = async (command, positional, rawOptions) => {
-    const options = resolveGlobalOptions(rawOptions);
+    const options = resolveGlobalOptions(rawOptions, command);
     const requestId = options.requestId ?? fallbackRequestId;
     const config =
       command === 'version' || command === 'capabilities'
         ? null
-        : loadConfig(env);
+        : loadConfig();
 
     const context = {
       command,
@@ -84,10 +88,10 @@ export async function runCli(argv, dependencies = {}) {
       options,
       requestId,
       config,
-      env,
       io,
       readStdin,
-      hiddenInput,
+      interactive,
+      promptLogin,
       credentialStore,
       fetchImpl: dependencies.fetchImpl ?? globalThis.fetch,
       sleep: dependencies.sleep,
@@ -96,8 +100,6 @@ export async function runCli(argv, dependencies = {}) {
       sensitiveValues: new Set([
         config?.apiAppCode,
         config?.devucAppCode,
-        env.CODEHUB_PRIVATE_TOKEN,
-        env.CODEHUB_AUTH_TOKEN,
       ]),
     };
 
@@ -262,24 +264,24 @@ async function executeCommand(context) {
 }
 
 async function login(context) {
-  const { options, credentialStore, config, readStdin, hiddenInput } = context;
-  if (options.withToken === options.devuc) {
+  const { options, credentialStore, config } = context;
+  if (options.noInput) {
     throw new CliError(
       'INVALID_ARGUMENT',
-      '必须且只能选择 --with-token 或 --devuc。',
+      'auth login 只允许人类在交互式终端中执行，不支持 --no-input。',
+    );
+  }
+  if (!context.interactive) {
+    throw new CliError(
+      'INVALID_ARGUMENT',
+      'auth login 需要交互式终端，请由人类用户在 Windows PowerShell 或 Linux 终端中执行。',
     );
   }
 
-  if (options.withToken) {
-    if (options.account || options.passwordStdin) {
-      throw new CliError(
-        'INVALID_ARGUMENT',
-        '--account 和 --password-stdin 仅适用于 --devuc。',
-      );
-    }
-
-    const token = stripOneTrailingNewline(await readStdin());
-    if (token.length === 0) {
+  const answers = await context.promptLogin();
+  if (answers?.method === AUTH_TYPES.PRIVATE_TOKEN) {
+    const token = answers.token;
+    if (typeof token !== 'string' || token.length === 0) {
       throw new CliError('INVALID_ARGUMENT', 'private token 不能为空。');
     }
     if (/[\r\n]/.test(token)) {
@@ -300,27 +302,22 @@ async function login(context) {
     };
   }
 
-  const account = validateAccount(options.account);
-  let password;
-  if (options.passwordStdin) {
-    password = stripOneTrailingNewline(await readStdin());
-  } else if (options.noInput) {
+  if (answers?.method !== 'devuc') {
     throw new CliError(
       'INVALID_ARGUMENT',
-      '--no-input 模式下必须使用 --password-stdin 提供 DevUC 密码。',
+      '不支持的认证方式。',
     );
-  } else {
-    password = await hiddenInput();
   }
-
-  if (password.length === 0) {
+  const account = validateAccount(answers.account);
+  let password = answers.password;
+  if (typeof password !== 'string' || password.length === 0) {
     throw new CliError('INVALID_ARGUMENT', 'DevUC 密码不能为空。');
   }
+  context.sensitiveValues.add(password);
 
   const api = apiFor(context, null);
   const result = await api.devucLogin(account, password);
   const token = result.data.result.newToken;
-  context.sensitiveValues.add(password);
   context.sensitiveValues.add(token);
   password = undefined;
   await credentialStore.save(config.apiHost, AUTH_TYPES.X_AUTH_TOKEN, token);
@@ -332,7 +329,6 @@ async function login(context) {
 
 async function authStatus(context) {
   const credential = await resolveCredential({
-    env: context.env,
     store: context.credentialStore,
     host: context.config.apiHost,
     allowMissing: true,
@@ -352,16 +348,11 @@ async function authStatus(context) {
 
 async function authLogout(context) {
   await context.credentialStore.clear(context.config.apiHost);
-  const environmentCredentialActive = hasEnvironmentCredential(context.env);
   return {
     data: {
       credential_helper_cleared: true,
-      environment_credential_active: environmentCredentialActive,
       api_host: context.config.apiOrigin,
     },
-    warnings: environmentCredentialActive
-      ? [WARNING.ENV_CREDENTIAL_STILL_ACTIVE]
-      : [],
   };
 }
 
@@ -411,7 +402,6 @@ async function authenticatedApi(context) {
 
 async function getCredential(context) {
   const credential = await resolveCredential({
-    env: context.env,
     store: context.credentialStore,
     host: context.config.apiHost,
   });
@@ -439,14 +429,17 @@ function apiFor(context, credential) {
   });
 }
 
-function resolveGlobalOptions(options) {
-  const output = validateOutput(options.output);
+function resolveGlobalOptions(options, command) {
+  const output = validateOutput(
+    options.output ?? (command === 'auth.login' ? 'human' : 'json'),
+  );
   const requestId = options.requestId
     ? validateRequestId(options.requestId)
     : undefined;
 
   return {
     ...options,
+    noInput: options.noInput === true || options.input === false,
     output,
     requestId,
     timeoutMs: parseTimeout(options.timeout),
@@ -493,8 +486,12 @@ function inferredRequestId(argv) {
   return isValidRequestId(value) ? value : null;
 }
 
-function inferredOutput(argv) {
-  return optionValue(argv, '--output') === 'human' ? 'human' : 'json';
+function inferredOutput(argv, command) {
+  const output = optionValue(argv, '--output');
+  if (output === 'human' || output === 'json') {
+    return output;
+  }
+  return command === 'auth.login' ? 'human' : 'json';
 }
 
 function optionValue(argv, name) {

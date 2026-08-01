@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { runCli } from '../src/cli.js';
-import { AUTH_TYPES } from '../src/constants.js';
+import { AUTH_TYPES, DEFAULTS } from '../src/constants.js';
+import { CliError } from '../src/errors.js';
 import {
   captureIo,
   jsonResponse,
@@ -27,7 +28,8 @@ async function invoke(argv, overrides = {}) {
     credentialStore: store,
     fetchImpl: overrides.fetchImpl,
     readStdin: overrides.readStdin,
-    readHidden: overrides.readHidden,
+    interactive: overrides.interactive,
+    promptLogin: overrides.promptLogin,
     sleep: overrides.sleep ?? (async () => {}),
     random: () => 0,
   });
@@ -72,47 +74,46 @@ test('capabilities 准确声明写入限制', async () => {
   assert.equal(data.write_auto_retry, false);
 });
 
-test('private token 登录只移除一个末尾换行并保存到 Credential Helper', async () => {
+test('private token 交互登录将凭据保存到 Credential Helper', async () => {
   const store = new MemoryCredentialStore();
-  const result = await invoke(['auth', 'login', '--with-token'], {
+  const result = await invoke(['auth', 'login'], {
     credentialStore: store,
-    readStdin: async () => ' secret-token \n',
+    interactive: true,
+    promptLogin: async () => ({
+      method: AUTH_TYPES.PRIVATE_TOKEN,
+      token: 'secret-token',
+    }),
   });
 
   assert.equal(result.code, 0);
-  assert.equal(store.saved[0].token, ' secret-token ');
+  assert.equal(store.saved[0].token, 'secret-token');
+  assert.match(result.stdout, /登录成功/);
   assert.doesNotMatch(result.stdout, /secret-token/);
 });
 
 test('DevUC 登录使用独立 AppCode，只保存 newToken 而不保存密码', async () => {
   const store = new MemoryCredentialStore();
   let request;
-  const result = await invoke(
-    [
-      'auth',
-      'login',
-      '--devuc',
-      '--account',
-      'agent123',
-      '--password-stdin',
-      '--no-input',
-    ],
-    {
-      credentialStore: store,
-      readStdin: async () => 'password-value\n',
-      fetchImpl: async (url, init) => {
-        request = { url: String(url), init };
-        return jsonResponse({
-          status: 'ok',
-          result: { newToken: 'new-auth-token', token: 'ignored-token' },
-        });
-      },
+  const result = await invoke(['auth', 'login'], {
+    credentialStore: store,
+    interactive: true,
+    promptLogin: async () => ({
+      method: 'devuc',
+      account: 'agent123',
+      password: 'password-value',
+    }),
+    fetchImpl: async (url, init) => {
+      request = { url: String(url), init };
+      return jsonResponse({
+        status: 'ok',
+        result: { newToken: 'new-auth-token', token: 'ignored-token' },
+      });
     },
-  );
+  });
 
   assert.equal(result.code, 0);
-  assert.equal(request.url, 'https://devuc.test/token');
-  assert.equal(request.init.headers['X-Apig-AppCode'], 'devuc-app-code');
+  assert.equal(request.url, DEFAULTS.devucUrl);
+  assert.equal(request.init.headers['X-Apig-AppCode'], DEFAULTS.devucAppCode);
   assert.equal(request.init.headers['private-token'], undefined);
   assert.deepEqual(JSON.parse(request.init.body), {
     account: 'agent123',
@@ -125,37 +126,95 @@ test('DevUC 登录使用独立 AppCode，只保存 newToken 而不保存密码',
 });
 
 test('DevUC 成功状态缺少 newToken 时返回响应协议错误', async () => {
-  const result = await invoke(
-    [
-      'auth',
-      'login',
-      '--devuc',
-      '--account',
-      'agent123',
-      '--password-stdin',
-      '--no-input',
-    ],
-    {
-      credentialStore: new MemoryCredentialStore(),
-      readStdin: async () => 'password-value',
-      fetchImpl: async () => jsonResponse({ status: 'ok', result: {} }),
-    },
-  );
+  const result = await invoke(['auth', 'login', '--output', 'json'], {
+    credentialStore: new MemoryCredentialStore(),
+    interactive: true,
+    promptLogin: async () => ({
+      method: 'devuc',
+      account: 'agent123',
+      password: 'password-value',
+    }),
+    fetchImpl: async () => jsonResponse({ status: 'ok', result: {} }),
+  });
 
   assert.equal(result.code, 9);
   assert.equal(JSON.parse(result.stderr).error.code, 'RESPONSE_SCHEMA_ERROR');
   assert.doesNotMatch(result.stderr, /password-value/);
 });
 
-test('auth status 只检查环境变量凭据，不访问网络或 Helper', async () => {
+test('非 TTY 环境不能执行登录', async () => {
+  let prompts = 0;
+  const result = await invoke(['auth', 'login', '--output', 'json'], {
+    credentialStore: new MemoryCredentialStore(),
+    interactive: false,
+    promptLogin: async () => {
+      prompts += 1;
+      return {};
+    },
+  });
+  const envelope = JSON.parse(result.stderr);
+
+  assert.equal(result.code, 2);
+  assert.equal(result.stdout, '');
+  assert.equal(prompts, 0);
+  assert.equal(envelope.error.code, 'INVALID_ARGUMENT');
+  assert.match(envelope.error.message, /交互式终端/);
+});
+
+test('auth login 拒绝 --no-input 和旧的非交互选项', async () => {
+  const noInput = await invoke(
+    ['auth', 'login', '--no-input', '--output', 'json'],
+    { interactive: true, promptLogin: async () => ({}) },
+  );
+
+  assert.equal(noInput.code, 2);
+  assert.equal(JSON.parse(noInput.stderr).error.code, 'INVALID_ARGUMENT');
+  assert.match(JSON.parse(noInput.stderr).error.message, /--no-input/);
+
+  for (const legacyArguments of [
+    ['--with-token'],
+    ['--devuc'],
+    ['--account', 'agent123'],
+    ['--password-stdin'],
+  ]) {
+    const legacy = await invoke(
+      ['auth', 'login', ...legacyArguments, '--output', 'json'],
+      { interactive: true, promptLogin: async () => ({}) },
+    );
+    assert.equal(legacy.code, 2, legacyArguments.join(' '));
+    assert.equal(
+      JSON.parse(legacy.stderr).error.code,
+      'INVALID_ARGUMENT',
+      legacyArguments.join(' '),
+    );
+  }
+});
+
+test('人类按 Ctrl+C 取消登录时返回 130', async () => {
+  const result = await invoke(['auth', 'login', '--output', 'json'], {
+    interactive: true,
+    promptLogin: async () => {
+      throw new CliError('CANCELLED', '用户取消了登录。');
+    },
+  });
+
+  assert.equal(result.code, 130);
+  assert.equal(result.stdout, '');
+  assert.equal(JSON.parse(result.stderr).error.code, 'CANCELLED');
+});
+
+test('auth status 只检查 Credential Helper，不访问网络', async () => {
   let helperReads = 0;
   let requests = 0;
   const result = await invoke(['auth', 'status'], {
-    env: { CODEHUB_AUTH_TOKEN: 'status-token' },
     credentialStore: {
       async get() {
         helperReads += 1;
-        return null;
+        return {
+          authType: AUTH_TYPES.X_AUTH_TOKEN,
+          token: 'stored-status-token',
+          source: 'credential_helper',
+        };
       },
     },
     fetchImpl: async () => {
@@ -166,33 +225,69 @@ test('auth status 只检查环境变量凭据，不访问网络或 Helper', asyn
   const envelope = JSON.parse(result.stdout);
 
   assert.equal(result.code, 0);
-  assert.equal(helperReads, 0);
+  assert.equal(helperReads, 1);
   assert.equal(requests, 0);
   assert.equal(envelope.data.authentication_type, 'x_auth_token');
+  assert.equal(envelope.data.credential_source, 'credential_helper');
   assert.equal(envelope.data.verified, false);
   assert.equal(envelope.warnings[0].code, 'CREDENTIAL_NOT_VERIFIED');
-  assert.doesNotMatch(result.stdout, /status-token/);
+  assert.doesNotMatch(result.stdout, /stored-status-token/);
 });
 
-test('auth logout 删除持久凭据并提示环境变量仍会生效', async () => {
+test('token 环境变量不作为认证凭据', async () => {
+  const result = await invoke(['auth', 'status'], {
+    env: {
+      CODEHUB_PRIVATE_TOKEN: 'ignored-private-token',
+      CODEHUB_AUTH_TOKEN: 'ignored-auth-token',
+    },
+    credentialStore: new MemoryCredentialStore(),
+  });
+  const envelope = JSON.parse(result.stdout);
+
+  assert.equal(result.code, 0);
+  assert.equal(envelope.data.configured, false);
+  assert.equal(envelope.data.credential_source, null);
+  assert.deepEqual(envelope.warnings, []);
+  assert.doesNotMatch(result.stdout, /ignored/);
+});
+
+test('Agent 未登录时业务命令返回 AUTH_REQUIRED 且不访问网络', async () => {
+  let requests = 0;
+  const result = await invoke(['repo', 'view', '42'], {
+    env: { CODEHUB_PRIVATE_TOKEN: 'ignored-token' },
+    credentialStore: new MemoryCredentialStore(),
+    fetchImpl: async () => {
+      requests += 1;
+      return jsonResponse({});
+    },
+  });
+  const envelope = JSON.parse(result.stderr);
+
+  assert.equal(result.code, 3);
+  assert.equal(result.stdout, '');
+  assert.equal(requests, 0);
+  assert.equal(envelope.error.code, 'AUTH_REQUIRED');
+  assert.match(envelope.error.message, /codehub auth login/);
+  assert.doesNotMatch(result.stderr, /ignored-token/);
+});
+
+test('auth logout 只删除 Credential Helper 凭据', async () => {
   const store = new MemoryCredentialStore();
   const result = await invoke(['auth', 'logout'], {
-    env: { CODEHUB_PRIVATE_TOKEN: 'active-token' },
     credentialStore: store,
   });
   const envelope = JSON.parse(result.stdout);
 
   assert.equal(result.code, 0);
   assert.equal(store.cleared, true);
-  assert.equal(envelope.data.environment_credential_active, true);
-  assert.equal(envelope.warnings[0].code, 'ENV_CREDENTIAL_STILL_ACTIVE');
-  assert.doesNotMatch(result.stdout, /active-token/);
+  assert.equal(envelope.data.credential_helper_cleared, true);
+  assert.deepEqual(envelope.warnings, []);
 });
 
 test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning', async () => {
   let request;
   const result = await invoke(['repo', 'list', '42'], {
-    env: { CODEHUB_PRIVATE_TOKEN: 'environment-token' },
+    env: { CODEHUB_PRIVATE_TOKEN: 'ignored-environment-token' },
     fetchImpl: async (url, init) => {
       request = { url: String(url), init };
       return jsonResponse([
@@ -209,9 +304,9 @@ test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning
   assert.equal(result.code, 0);
   assert.equal(
     request.url,
-    'https://codehub.test/api/v4/groups/42/projects',
+    `${DEFAULTS.apiBaseUrl}/groups/42/projects`,
   );
-  assert.equal(request.init.headers['private-token'], 'environment-token');
+  assert.equal(request.init.headers['private-token'], 'test-token');
   assert.equal(request.init.headers['X-Auth-token'], undefined);
   assert.equal(envelope.data[0].id, '9001');
   assert.equal(envelope.data[0].namespace.id, '8');
@@ -220,11 +315,15 @@ test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning
 
 test('服务端响应即使回显凭据或含凭据 URL，也不会泄漏到输出', async () => {
   const result = await invoke(['repo', 'view', '42'], {
-    env: { CODEHUB_PRIVATE_TOKEN: 'environment-token' },
+    credentialStore: new MemoryCredentialStore({
+      authType: AUTH_TYPES.PRIVATE_TOKEN,
+      token: 'stored-secret-token',
+      source: 'credential_helper',
+    }),
     fetchImpl: async () =>
       jsonResponse({
         id: 42,
-        echoed: 'environment-token',
+        echoed: 'stored-secret-token',
         http_url_to_repo:
           'https://oauth2:another-secret@codehub.test/group/repo.git',
       }),
@@ -236,7 +335,7 @@ test('服务端响应即使回显凭据或含凭据 URL，也不会泄漏到输�
     data.http_url_to_repo,
     'https://codehub.test/group/repo.git',
   );
-  assert.doesNotMatch(result.stdout, /environment-token|another-secret/);
+  assert.doesNotMatch(result.stdout, /stored-secret-token|another-secret/);
 });
 
 test('mr list 支持命令后的全局 -R，并把 open 映射为 opened', async () => {
@@ -251,7 +350,7 @@ test('mr list 支持命令后的全局 -R，并把 open 映射为 opened', async
   assert.equal(result.code, 0);
   assert.equal(
     url,
-    'https://codehub.test/api/v4/projects/77/isource/merge_requests?state=opened',
+    `${DEFAULTS.apiBaseUrl}/projects/77/isource/merge_requests?state=opened`,
   );
 });
 
@@ -259,19 +358,19 @@ test('Project、MR 详情与 Commit 的 API path 完整映射', async () => {
   const cases = [
     {
       argv: ['repo', 'view', '12'],
-      expected: 'https://codehub.test/api/v4/projects/12',
+      expected: `${DEFAULTS.apiBaseUrl}/projects/12`,
       response: { id: 12, name: 'project' },
     },
     {
       argv: ['mr', 'view', '7', '-R', '12'],
       expected:
-        'https://codehub.test/api/v4/projects/12/isource/merge_requests/7',
+        `${DEFAULTS.apiBaseUrl}/projects/12/isource/merge_requests/7`,
       response: { id: 90, iid: 7, project_id: 12 },
     },
     {
       argv: ['mr', 'commits', '7', '-R', '12'],
       expected:
-        'https://codehub.test/api/v4/projects/12/merge_requests/7/commits',
+        `${DEFAULTS.apiBaseUrl}/projects/12/merge_requests/7/commits`,
       response: [{ id: 'abc123', parent_ids: ['def456'] }],
     },
   ];
@@ -466,7 +565,6 @@ test('评论 POST 正文保持原样，成功结果包含安全 warning', async 
 
 test('响应结构错误不会把原始响应或凭据写入输出', async () => {
   const result = await invoke(['repo', 'view', '2'], {
-    env: { CODEHUB_PRIVATE_TOKEN: 'never-print-this' },
     fetchImpl: async () =>
       jsonResponse({ secret_server_field: 'never-print-response' }, {
         status: 200,
@@ -475,7 +573,6 @@ test('响应结构错误不会把原始响应或凭据写入输出', async () =>
 
   // Project 详情只要求对象；改用数组触发 schema error。
   const invalid = await invoke(['repo', 'view', '2'], {
-    env: { CODEHUB_PRIVATE_TOKEN: 'never-print-this' },
     fetchImpl: async () => jsonResponse([]),
   });
 

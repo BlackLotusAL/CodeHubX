@@ -91,28 +91,3 @@ export function validateAccount(value) {
   }
   return String(value);
 }
-
-export function validateHttpsUrl(value, environmentName) {
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new CliError(
-      'INVALID_ARGUMENT',
-      `${environmentName} 必须是合法的 HTTPS URL。`,
-    );
-  }
-
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-    throw new CliError(
-      'INVALID_ARGUMENT',
-      `${environmentName} 必须是合法且不含凭据的 HTTPS URL。`,
-    );
-  }
-
-  return parsed.toString().replace(/\/$/, '');
-}
-
-export function stripOneTrailingNewline(value) {
-  return String(value).replace(/\r?\n$/, '');
-}

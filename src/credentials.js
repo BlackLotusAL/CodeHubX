@@ -9,7 +9,7 @@ const USERNAME_BY_AUTH_TYPE = Object.freeze({
 
 export class GitCredentialStore {
   constructor({ env = process.env, runGit = defaultRunGit } = {}) {
-    this.env = env;
+    this.env = { ...env };
     this.runGit = runGit;
   }
 
@@ -131,39 +131,10 @@ export class GitCredentialStore {
 }
 
 export async function resolveCredential({
-  env = process.env,
   store,
   host,
   allowMissing = false,
 }) {
-  const privateToken = env.CODEHUB_PRIVATE_TOKEN;
-  const authToken = env.CODEHUB_AUTH_TOKEN;
-  const hasPrivateToken = typeof privateToken === 'string' && privateToken.length > 0;
-  const hasAuthToken = typeof authToken === 'string' && authToken.length > 0;
-
-  if (hasPrivateToken && hasAuthToken) {
-    throw new CliError(
-      'CONFIG_CONFLICT',
-      'CODEHUB_PRIVATE_TOKEN 与 CODEHUB_AUTH_TOKEN 不能同时设置。',
-    );
-  }
-
-  if (hasPrivateToken) {
-    return {
-      authType: AUTH_TYPES.PRIVATE_TOKEN,
-      token: privateToken,
-      source: 'environment',
-    };
-  }
-
-  if (hasAuthToken) {
-    return {
-      authType: AUTH_TYPES.X_AUTH_TOKEN,
-      token: authToken,
-      source: 'environment',
-    };
-  }
-
   const stored = await store.get(host);
   if (stored) {
     return stored;
@@ -175,12 +146,8 @@ export async function resolveCredential({
 
   throw new CliError(
     'AUTH_REQUIRED',
-    '未找到 CodeHub 凭据，请先登录或配置 token 环境变量。',
+    '未找到 CodeHub 凭据，请由人类用户先执行 codehub auth login。',
   );
-}
-
-export function hasEnvironmentCredential(env = process.env) {
-  return Boolean(env.CODEHUB_PRIVATE_TOKEN || env.CODEHUB_AUTH_TOKEN);
 }
 
 function credentialInput(host, username, password) {
@@ -222,12 +189,12 @@ function defaultRunGit(args, input, env) {
     let child;
 
     try {
+      const gitEnvironment = {
+        ...env,
+        GIT_TERMINAL_PROMPT: '0',
+      };
       child = spawn('git', args, {
-        env: {
-          ...process.env,
-          ...env,
-          GIT_TERMINAL_PROMPT: '0',
-        },
+        env: gitEnvironment,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

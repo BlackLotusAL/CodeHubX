@@ -94,12 +94,7 @@ function renderHuman(command, data, warnings) {
       );
       break;
     case 'auth.logout':
-      sections.push(
-        [
-          '已删除 Credential Helper 中的 CodeHub 凭据。',
-          `环境变量凭据仍生效: ${yesNo(data.environment_credential_active)}`,
-        ].join('\n'),
-      );
+      sections.push('Credential Helper 中的 CodeHub 凭据已删除。');
       break;
     case 'repo.list':
       sections.push(renderTable(data, ['id', 'name', 'path_with_namespace', 'archived']));

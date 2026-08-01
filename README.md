@@ -27,21 +27,21 @@ npm test
 
 ## 快速使用
 
-private token 只从 stdin 读取：
+安装 CLI 后，由人类在 Windows PowerShell 或 Linux 终端中运行：
 
 ```bash
-printf '%s' "$TOKEN" | codehub auth login --with-token
+codehub auth login
 ```
 
-DevUC 非交互登录：
+CLI 会显示一个交互式登录向导：
 
-```bash
-printf '%s' "$PASSWORD" | codehub auth login \
-  --devuc \
-  --account user123 \
-  --password-stdin \
-  --no-input
-```
+1. 使用 `↑` / `↓` 选择 `Private Token` 或 `DevUC 账号`，按 `Enter` 确认。
+2. 选择 Private Token 后输入 token；选择 DevUC 后依次输入账号和密码。
+3. token 和密码使用掩码显示。登录成功后，认证 token 保存到 Git Credential Helper。
+
+按 `Ctrl+C` 可取消登录。登录必须由人类在真实交互式终端中完成，不支持通过 stdin
+管道或重定向提供凭据，也不支持 `--no-input` 或认证参数。未登录的 AI Agent 执行业务命令时会
+收到 `AUTH_REQUIRED`，应提醒人类先完成上述登录。
 
 查询 Project 与 MR：
 
@@ -69,17 +69,13 @@ stderr 只输出一个 JSON 错误对象。人工查看可增加 `--output human
 
 ## 配置
 
-CLI 内置当前 CodeHub 与 DevUC 服务地址，可用以下环境变量覆盖：
+CLI 固定使用内置的 CodeHub、DevUC 服务地址和 AppCode，不支持通过命令行、
+环境变量或配置文件覆盖，也不从环境变量读取认证 token。人类用户必须先执行
+`codehub auth login` 完成登录，凭据由 Git Credential Helper 保存后，AI Agent 才能执行业务命令。
 
-- `CODEHUB_API_BASE_URL`
-- `CODEHUB_API_APP_CODE`
-- `CODEHUB_DEVUC_URL`
-- `CODEHUB_DEVUC_APP_CODE`
-- `CODEHUB_PRIVATE_TOKEN`
-- `CODEHUB_AUTH_TOKEN`
-
-URL 覆盖值必须使用 HTTPS。两个 token 环境变量不能同时设置。CLI 不创建明文
-token 配置文件，也不会输出 token、密码或 AppCode。
+未登录时，业务命令返回 `AUTH_REQUIRED`，Agent 应提醒人类完成认证。CodeHub 服务地址或
+AppCode 变更时需发布新的 CLI 版本。CLI 不创建明文 token 配置文件，也不会输出 token、
+密码或 AppCode。
 
 成功与错误信封的 JSON Schema 位于
 [`schemas/`](./schemas)。完整产品边界见

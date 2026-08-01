@@ -6,10 +6,9 @@ import {
 } from '../src/credentials.js';
 import { AUTH_TYPES } from '../src/constants.js';
 
-test('环境变量凭据优先于 Credential Helper', async () => {
+test('认证凭据只从 Credential Helper 读取', async () => {
   let helperReads = 0;
   const credential = await resolveCredential({
-    env: { CODEHUB_PRIVATE_TOKEN: 'environment-secret' },
     store: {
       async get() {
         helperReads += 1;
@@ -23,29 +22,25 @@ test('环境变量凭据优先于 Credential Helper', async () => {
     host: 'codehub.test',
   });
 
-  assert.equal(helperReads, 0);
-  assert.equal(credential.token, 'environment-secret');
-  assert.equal(credential.source, 'environment');
+  assert.equal(helperReads, 1);
+  assert.equal(credential.token, 'stored-secret');
+  assert.equal(credential.source, 'credential_helper');
 });
 
-test('两个 token 环境变量同时存在时拒绝猜测', async () => {
+test('未登录时返回 AUTH_REQUIRED', async () => {
   await assert.rejects(
     resolveCredential({
-      env: {
-        CODEHUB_PRIVATE_TOKEN: 'one',
-        CODEHUB_AUTH_TOKEN: 'two',
-      },
       store: { get: async () => null },
       host: 'codehub.test',
     }),
-    { code: 'CONFIG_CONFLICT' },
+    { code: 'AUTH_REQUIRED' },
   );
 });
 
 test('Git Credential Helper 通过 stdin 接收 token，token 不进入参数', async () => {
   const calls = [];
-  const runGit = async (args, input) => {
-    calls.push({ args, input });
+  const runGit = async (args, input, env) => {
+    calls.push({ args, input, env });
     if (args[0] === '--version') {
       return { code: 0, stdout: 'git version 2.0', stderr: '' };
     }
@@ -62,7 +57,10 @@ test('Git Credential Helper 通过 stdin 接收 token，token 不进入参数', 
     }
     return { code: 0, stdout: '', stderr: '' };
   };
-  const store = new GitCredentialStore({ runGit, env: {} });
+  const store = new GitCredentialStore({
+    runGit,
+    env: {},
+  });
 
   await store.save('codehub.test', AUTH_TYPES.PRIVATE_TOKEN, 'top-secret');
 

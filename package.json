@@ -21,7 +21,7 @@
   "scripts": {
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check bin/codehub.js && node --check src/cli.js && node --check src/http.js",
+    "check": "node --check bin/codehub.js && node --check src/cli.js && node --check src/http.js && node --check src/prompts.js",
     "prepack": "npm run check && npm test"
   },
   "engines": {
@@ -35,6 +35,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@inquirer/prompts": "^7.10.1",
     "commander": "^14.0.3"
   },
   "devDependencies": {

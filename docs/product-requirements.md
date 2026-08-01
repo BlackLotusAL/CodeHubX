@@ -3,7 +3,7 @@
 - 文档状态：Draft
 - 产品版本：MVP / 0.1
 - 文档版本：1.0
-- 更新日期：2026-07-30
+- 更新日期：2026-08-01
 - API 依据：[API 接口清单](./api-interfaces.md)
 - 远期需求基线：[CodeHub CLI 需求基线](./codehub-cli-requirements.md)
 
@@ -69,7 +69,7 @@ CodeHub CLI 的定位是：
 
 | API | MVP 命令/流程 | 说明 |
 | --- | --- | --- |
-| DevUC 授权 | `codehub auth login --devuc` | 用账号密码换取 X-Auth-token |
+| DevUC 授权 | `codehub auth login` 交互向导 | 由人类选择 DevUC 并用账号密码换取 X-Auth-token |
 | Group Project 列表 | `codehub repo list <group-id>` | 返回指定 Group 中的 Project |
 | Project 详情 | `codehub repo view <project-id>` | 返回单个 Project |
 | Project MR 列表 | `codehub mr list -R <project-id>` | 支持文档已确认的状态过滤 |
@@ -109,7 +109,7 @@ CodeHub CLI 的定位是：
 - `--timeout` 接受正整数加 `ms`、`s` 或 `m`，例如 `500ms`、`30s`、`2m`。
 - `--request-id` 只允许字母、数字、`.`、`_`、`:`、`-`，长度为 1～128 个字符；未提供时由 CLI 生成。
 - 当前 API 未确认 request ID 请求头，MVP 只将其用于客户端输出和日志关联，不向服务端发送未经确认的自定义 Header。
-- `--no-input` 模式下，任何缺失的交互输入都直接返回 `INVALID_ARGUMENT`，不得等待终端输入。
+- `--no-input` 模式下，任何缺失的交互输入都直接返回 `INVALID_ARGUMENT`，不得等待终端输入；`auth login` 是人类专用交互流程，始终拒绝 `--no-input`。
 - 参数中的 Project ID、Group ID 和 MR IID 必须为正整数字符串；CLI 不把命名空间路径猜测或转换为 ID。
 - 帮助文本和 human 输出使用简体中文；机器协议中的字段名、错误码和枚举使用英文。
 
@@ -142,44 +142,25 @@ CodeHub CLI 的定位是：
 
 ### 5.3 认证命令
 
-#### private token 登录
+#### 人类交互登录
 
 ```bash
-printf '%s' "$TOKEN" | codehub auth login --with-token
+codehub auth login
 ```
 
-- private token 只能从 stdin 读取，不提供 `--token` 参数。
-- CLI 只移除 stdin 末尾的单个换行符，不得改变 token 其他字符。
-- 空 token 必须在本地拒绝。
-- 登录成功后将 token 交给 Git Credential Helper 保存。
-
-#### DevUC 登录
-
-交互模式：
-
-```bash
-codehub auth login --devuc --account <account>
-```
-
-非交互模式：
-
-```bash
-printf '%s' "$PASSWORD" | codehub auth login \
-  --devuc \
-  --account <account> \
-  --password-stdin \
-  --no-input
-```
-
-- `account` 必须符合 API 要求的字母和数字组合。
-- 交互模式使用隐藏输入读取密码；`--password-stdin` 从 stdin 读取密码。
-- 密码仅用于本次 DevUC 请求，任何情况下都不得保存。
-- 认证成功后只使用响应中的 `result.newToken`，并将其作为 X-Auth-token 保存。
+- `auth login` 必须由人类在带 TTY 的 Windows PowerShell 或 Linux 终端中执行；stdin 或交互提示输出（stderr）不是 TTY 时返回 `INVALID_ARGUMENT`，不得读取管道内容。
+- CLI 显示带颜色的标题、操作提示和认证方式列表。人类使用 `↑` / `↓` 选择 `Private Token` 或 `DevUC 账号`，按 `Enter` 确认。
+- 选择 Private Token 后，CLI 提示输入 token，输入内容以掩码显示；空 token 和包含换行符的 token 必须在本地拒绝。
+- 选择 DevUC 后，CLI 依次提示输入账号和密码。账号可见且必须为字母和数字组合，密码以掩码显示。
+- `Ctrl+C` 取消登录并返回 `CANCELLED`，退出码为 `130`。
+- `auth login` 不接受 `--no-input`，也不提供 token、账号、密码或认证方式的命令行选项；不支持任何非交互登录方式。
+- private token 登录成功后将 token 交给 Git Credential Helper 保存。
+- DevUC 密码仅用于本次请求，任何情况下都不得保存。认证成功后只保存响应中的 `result.newToken`，作为 X-Auth-token 使用。
 - DevUC 返回成功状态但缺少 `newToken` 时返回 `RESPONSE_SCHEMA_ERROR`。
 
 #### `codehub auth status`
 
-- 显示是否已配置凭据、凭据来源（环境变量或 Credential Helper）、认证类型和 API host。
+- 显示是否已配置 Credential Helper 凭据、认证类型和 API host。
 - 不显示 token 原文、掩码 token、账号密码或 AppCode。
 - 由于现有 API 没有身份或 token 状态接口，该命令只检查凭据是否存在，不宣称 token 有效，并在 `warnings` 中返回 `CREDENTIAL_NOT_VERIFIED`。
 - 不发起网络请求。
@@ -187,16 +168,14 @@ printf '%s' "$PASSWORD" | codehub auth login \
 #### `codehub auth logout`
 
 - 删除当前 CodeHub host 下由 CLI 保存的 private token 和 X-Auth-token。
-- 环境变量提供的凭据不能由 CLI 删除；若仍存在环境凭据，结果必须明确说明其仍会生效。
 - 不调用远端 token 吊销接口，因为现有 API 未提供该能力。
 
 #### 凭据选择规则
 
-1. `CODEHUB_PRIVATE_TOKEN` 或 `CODEHUB_AUTH_TOKEN` 环境变量优先于 Credential Helper。
-2. 两个 token 环境变量同时存在时返回 `CONFIG_CONFLICT`，不猜测使用哪一个。
-3. 没有环境凭据时读取 Git Credential Helper 中的当前凭据。
-4. 每次 `auth login` 只保留最后登录的认证类型，并清除 CLI 为同一 host 保存的另一种 token，避免选择歧义。
-5. Git Credential Helper 不可用或拒绝保存时，登录返回认证配置错误；DevUC 密码和已获取 token 不写入其他文件作为降级。
+1. 业务命令只读取 Git Credential Helper 中的当前凭据，不从环境变量读取 token。
+2. 每次 `auth login` 只保留最后登录的认证类型，并清除 CLI 为同一 host 保存的另一种 token，避免选择歧义。
+3. Git Credential Helper 中没有凭据时，业务命令返回 `AUTH_REQUIRED`，不发起网络请求；Agent 应提醒人类用户先执行 `codehub auth login`。
+4. Git Credential Helper 不可用或拒绝保存时，登录返回认证配置错误；DevUC 密码和已获取 token 不写入其他文件作为降级。
 
 ### 5.4 Project 命令
 
@@ -275,24 +254,14 @@ codehub mr comment create <iid> \
 
 ## 6. 认证、配置与请求协议
 
-### 6.1 环境配置
+### 6.1 固定服务配置与凭据存储
 
-MVP 面向单一公司 CodeHub 环境，内置 `api-interfaces.md` 记录的当前服务地址和 AppCode。为支持测试、迁移和 AppCode 轮换，允许使用以下环境变量覆盖默认值：
-
-| 环境变量 | 用途 |
-| --- | --- |
-| `CODEHUB_API_BASE_URL` | CodeHub API Base URL |
-| `CODEHUB_API_APP_CODE` | CodeHub API 的 X-Apig-AppCode |
-| `CODEHUB_DEVUC_URL` | DevUC 授权 URL |
-| `CODEHUB_DEVUC_APP_CODE` | DevUC 的 X-Apig-AppCode |
-| `CODEHUB_PRIVATE_TOKEN` | private-token 认证凭据 |
-| `CODEHUB_AUTH_TOKEN` | X-Auth-token 认证凭据 |
+MVP 面向单一公司 CodeHub 环境，固定内置 `api-interfaces.md` 记录的当前服务地址和 AppCode。CLI 不提供命令行参数、环境变量或配置文件来覆盖这些值，也不从环境变量读取认证 token。认证凭据只能通过 `codehub auth login` 写入 Git Credential Helper，业务命令只从 Credential Helper 读取。
 
 要求：
 
-- URL 覆盖值必须为合法 HTTPS URL；MVP 不允许通过配置关闭 TLS 校验。
+- 内置服务 URL 必须为 HTTPS URL；MVP 不允许通过配置关闭 TLS 校验。
 - AppCode、token 和密码均视为敏感信息并执行相同级别的输出脱敏。
-- 错误信息可指出缺少哪个环境变量，但不得输出其值。
 - MVP 不创建包含 token 的项目级或用户级明文配置文件。
 
 ### 6.2 请求头
@@ -372,7 +341,6 @@ JSON 成功结果固定为一个对象：
 | `PARTIAL_LIST_POSSIBLE` | 服务端分页契约未知，列表可能不是全量 |
 | `CREDENTIAL_NOT_VERIFIED` | 只确认凭据存在，未验证远端有效性 |
 | `UNSAFE_WRITE_GUARANTEES` | 写接口不支持条件写和幂等 |
-| `ENV_CREDENTIAL_STILL_ACTIVE` | logout 后环境变量凭据仍然存在 |
 
 ### 7.2 错误结果
 
@@ -441,7 +409,8 @@ UNSUPPORTED_CAPABILITY
 
 ## 8. 安全与隐私要求
 
-- token 和密码不得作为命令行参数，从而避免出现在 Shell 历史和进程列表。
+- token 和密码不得作为命令行参数或管道输入，只能由人类在登录向导的掩码输入框中输入。
+- 登录向导必须要求 stdin 和提示输出均连接真实交互式终端，并兼容 Windows PowerShell 和 Linux 终端。
 - DevUC 密码不得落盘、缓存或写入 Git Credential Helper。
 - CLI 调用 Git Credential Helper 时必须通过 stdin 传递协议数据，不把 token 拼接进子进程参数。
 - 日志、错误、HTTP trace、测试快照和异常堆栈必须统一执行凭据脱敏。
@@ -515,10 +484,11 @@ UNSUPPORTED_CAPABILITY
 
 ### 11.2 认证与凭据测试
 
-- private token 只能从 stdin 读取并能通过 Credential Helper 保存、读取和删除。
+- 登录向导可通过方向键选择 private token 或 DevUC，敏感输入使用掩码显示，并能通过 Credential Helper 保存、读取和删除认证 token。
+- 非 TTY、`--no-input` 和旧的非交互登录参数均在读取凭据前被拒绝；`Ctrl+C` 返回退出码 `130`。
 - DevUC 密码在换取 token 后不可从文件、日志、错误或 Credential Helper 中检索到。
-- 环境变量优先于 Credential Helper。
-- 两个 token 环境变量同时存在时返回 `CONFIG_CONFLICT`。
+- 业务命令不读取 token 环境变量，只使用 Credential Helper 中的凭据。
+- Credential Helper 中没有凭据时返回 `AUTH_REQUIRED`，且不发起网络请求。
 - `auth login` 切换认证类型后不会留下两个可选的持久化凭据。
 - Git 或 Credential Helper 不可用时返回明确错误且不降级为明文文件。
 - `auth status` 和 `auth logout` 不泄露敏感值。
@@ -570,8 +540,8 @@ UNSUPPORTED_CAPABILITY
 | API 分页行为未记录 | Project/MR 列表可能不完整 | 不承诺全量，固定输出 warning，并推动补充 API 契约 |
 | 评论 API 无条件写和幂等 | 可能产生过期或重复评论 | 强制确认、不自动重试、返回明确 warning |
 | DevUC token 有效期未知 | `auth status` 无法判断是否过期 | 只报告凭据存在性，401 时返回认证错误 |
-| Git Credential Helper 未配置 | 无法持久化登录凭据 | 返回明确配置错误；Agent 可直接使用环境变量 |
-| AppCode 或服务地址变化 | 内置默认值失效 | 支持环境变量覆盖并执行脱敏 |
+| Git Credential Helper 未配置 | 无法持久化登录凭据 | 返回明确配置错误；由人类完成 Helper 配置和登录 |
+| AppCode 或服务地址变化 | 内置配置失效 | 更新内置值、通过回归测试后发布新版本 |
 | 服务端响应字段变化 | Agent 解析失败 | 稳定外层信封、保留未知字段、维护 Schema 兼容测试 |
 
 ## 14. 假设

@@ -3,8 +3,6 @@ import test from 'node:test';
 import {
   parsePositiveId,
   parseTimeout,
-  stripOneTrailingNewline,
-  validateHttpsUrl,
   validateRequestId,
   validateState,
 } from '../src/validation.js';
@@ -31,25 +29,4 @@ test('open 状态映射为服务端 opened', () => {
   assert.equal(validateState('open'), 'opened');
   assert.equal(validateState('all'), 'all');
   assert.throws(() => validateState('opened'), { code: 'INVALID_ARGUMENT' });
-});
-
-test('URL 覆盖必须是 HTTPS 且不能包含凭据', () => {
-  assert.equal(
-    validateHttpsUrl('https://example.test/api/', 'TEST_URL'),
-    'https://example.test/api',
-  );
-  assert.throws(() => validateHttpsUrl('http://example.test', 'TEST_URL'), {
-    code: 'INVALID_ARGUMENT',
-  });
-  assert.throws(
-    () => validateHttpsUrl('https://user:pass@example.test', 'TEST_URL'),
-    { code: 'INVALID_ARGUMENT' },
-  );
-});
-
-test('stdin token 只移除末尾一个换行', () => {
-  assert.equal(stripOneTrailingNewline('token\n'), 'token');
-  assert.equal(stripOneTrailingNewline('token\r\n'), 'token');
-  assert.equal(stripOneTrailingNewline('token\n\n'), 'token\n');
-  assert.equal(stripOneTrailingNewline(' token '), ' token ');
 });

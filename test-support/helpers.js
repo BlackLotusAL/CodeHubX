@@ -52,11 +52,5 @@ export function jsonResponse(value, init = {}) {
 }
 
 export function testEnv(overrides = {}) {
-  return {
-    CODEHUB_API_BASE_URL: 'https://codehub.test/api/v4',
-    CODEHUB_API_APP_CODE: 'api-app-code',
-    CODEHUB_DEVUC_URL: 'https://devuc.test/token',
-    CODEHUB_DEVUC_APP_CODE: 'devuc-app-code',
-    ...overrides,
-  };
+  return { ...overrides };
 }

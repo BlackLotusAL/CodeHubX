@@ -16,7 +16,7 @@ export function createProgram({ execute, io }) {
       writeErr: () => {},
       outputError: () => {},
     })
-    .option('--output <json|human>', '输出格式', 'json')
+    .option('--output <json|human>', '输出格式（业务命令默认 json，登录默认 human）')
     .option('--request-id <id>', '调用关联 ID')
     .option('--timeout <duration>', '单次 HTTP 请求超时', DEFAULTS.timeout)
     .option('--no-input', '禁止交互式提示')
@@ -35,19 +35,7 @@ export function createProgram({ execute, io }) {
   const auth = program.command('auth').description('管理 CodeHub 凭据');
   auth
     .command('login')
-    .description('使用 private token 或 DevUC 登录')
-    .addOption(
-      new Option('--with-token', '从 stdin 读取 private token').conflicts(
-        'devuc',
-      ),
-    )
-    .addOption(
-      new Option('--devuc', '通过 DevUC 换取 X-Auth-token').conflicts(
-        'withToken',
-      ),
-    )
-    .option('--account <account>', 'DevUC 账号')
-    .option('--password-stdin', '从 stdin 读取 DevUC 密码')
+    .description('在交互式终端中选择认证方式并登录')
     .action(action('auth.login'));
 
   auth
