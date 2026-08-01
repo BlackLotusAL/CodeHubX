@@ -64,8 +64,8 @@ export class GitCredentialStore {
       throw credentialFailure();
     }
 
-    const verified = await this.#fill(host, CREDENTIAL_USERNAME);
-    if (!verified || verified.password !== record) {
+    const persisted = await this.#fill(host, CREDENTIAL_USERNAME);
+    if (!persisted || persisted.password !== record) {
       throw new CliError(
         'CREDENTIAL_ERROR',
         'Git Credential Helper 未能持久化凭据。',

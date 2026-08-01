@@ -206,17 +206,18 @@ test('人类按 Ctrl+C 取消登录时返回 130', async () => {
 test('auth status 只检查 Credential Helper，不访问网络', async () => {
   let helperReads = 0;
   let requests = 0;
-  const result = await invoke(['auth', 'status'], {
-    credentialStore: {
-      async get() {
-        helperReads += 1;
-        return {
-          authType: AUTH_TYPES.X_AUTH_TOKEN,
-          token: 'stored-status-token',
-          source: 'credential_helper',
-        };
-      },
+  const credentialStore = {
+    async get() {
+      helperReads += 1;
+      return {
+        authType: AUTH_TYPES.X_AUTH_TOKEN,
+        token: 'stored-status-token',
+        source: 'credential_helper',
+      };
     },
+  };
+  const result = await invoke(['auth', 'status'], {
+    credentialStore,
     fetchImpl: async () => {
       requests += 1;
       return jsonResponse({});
@@ -229,9 +230,16 @@ test('auth status 只检查 Credential Helper，不访问网络', async () => {
   assert.equal(requests, 0);
   assert.equal(envelope.data.authentication_type, 'x_auth_token');
   assert.equal(envelope.data.credential_source, 'credential_helper');
-  assert.equal(envelope.data.verified, false);
-  assert.equal(envelope.warnings[0].code, 'CREDENTIAL_NOT_VERIFIED');
+  assert.equal('verified' in envelope.data, false);
+  assert.deepEqual(envelope.warnings, []);
   assert.doesNotMatch(result.stdout, /stored-status-token/);
+
+  const human = await invoke(['auth', 'status', '--output', 'human'], {
+    credentialStore,
+  });
+  assert.equal(human.code, 0);
+  assert.equal(helperReads, 2);
+  assert.doesNotMatch(human.stdout, /远端有效性|未验证/);
 });
 
 test('token 环境变量不作为认证凭据', async () => {

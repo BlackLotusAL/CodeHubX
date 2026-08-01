@@ -340,9 +340,7 @@ async function authStatus(context) {
       credential_source: credential?.source ?? null,
       authentication_type: credential?.authType ?? null,
       api_host: context.config.apiOrigin,
-      verified: false,
     },
-    warnings: credential ? [WARNING.CREDENTIAL_NOT_VERIFIED] : [],
   };
 }
 

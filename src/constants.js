@@ -22,10 +22,6 @@ export const WARNING = Object.freeze({
     code: 'PARTIAL_LIST_POSSIBLE',
     message: '服务端分页契约未知，返回的列表可能不是全量。',
   },
-  CREDENTIAL_NOT_VERIFIED: {
-    code: 'CREDENTIAL_NOT_VERIFIED',
-    message: '只确认凭据存在，未向远端验证其有效性。',
-  },
   UNSAFE_WRITE_GUARANTEES: {
     code: 'UNSAFE_WRITE_GUARANTEES',
     message:

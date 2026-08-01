@@ -89,7 +89,6 @@ function renderHuman(command, data, warnings) {
           `凭据来源: ${data.credential_source ?? '-'}`,
           `认证类型: ${data.authentication_type ?? '-'}`,
           `API: ${data.api_host}`,
-          '远端有效性: 未验证',
         ].join('\n'),
       );
       break;

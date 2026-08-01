@@ -162,7 +162,7 @@ codehub auth login
 
 - 显示是否已配置 Credential Helper 凭据、认证类型和 API host。
 - 不显示 token 原文、掩码 token、账号密码或 AppCode。
-- 由于现有 API 没有身份或 token 状态接口，该命令只检查凭据是否存在，不宣称 token 有效，并在 `warnings` 中返回 `CREDENTIAL_NOT_VERIFIED`。
+- 该命令的语义仅为“本地是否已保存凭据”，不输出远端有效性字段或 warning。Token 的认证与权限由实际业务请求的服务端响应确定：401 映射为 `AUTH_FAILED`，403 映射为 `FORBIDDEN`。
 - 不发起网络请求。
 - Credential Helper 查询必须禁止 GUI、浏览器和终端提示；缺少凭据时直接报告未配置。
 
@@ -351,7 +351,6 @@ JSON 成功结果固定为一个对象：
 | code | 使用场景 |
 | --- | --- |
 | `PARTIAL_LIST_POSSIBLE` | 服务端分页契约未知，列表可能不是全量 |
-| `CREDENTIAL_NOT_VERIFIED` | 只确认凭据存在，未验证远端有效性 |
 | `UNSAFE_WRITE_GUARANTEES` | 写接口不支持条件写和幂等 |
 
 ### 7.2 错误结果
@@ -554,7 +553,7 @@ UNSUPPORTED_CAPABILITY
 | --- | --- | --- |
 | API 分页行为未记录 | Project/MR 列表可能不完整 | 不承诺全量，固定输出 warning，并推动补充 API 契约 |
 | 评论 API 无条件写和幂等 | 可能产生过期或重复评论 | 强制确认、不自动重试、返回明确 warning |
-| DevUC token 有效期未知 | `auth status` 无法判断是否过期 | 只报告凭据存在性，401 时返回认证错误 |
+| DevUC token 有效期未知 | Token 可能在保存后失效 | `auth status` 只报告本地凭据状态；业务请求收到 401 时返回认证错误 |
 | Git Credential Helper 未配置 | 无法持久化登录凭据 | 返回明确配置错误；由人类完成 Helper 配置和登录 |
 | AppCode 或服务地址变化 | 内置配置失效 | 更新内置值、通过回归测试后发布新版本 |
 | 服务端响应字段变化 | Agent 解析失败 | 稳定外层信封、保留未知字段、维护 Schema 兼容测试 |
