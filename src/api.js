@@ -24,7 +24,7 @@ export function createApiClient({
     Accept: 'application/json',
     'Content-Type': 'application/json',
     'User-Agent': `codehub/${CLI_VERSION} node/${process.versions.node} ${process.platform}`,
-    'X-Apig-AppCode': config.apiAppCode,
+    'X-Apig-AppCode': config.codehub.appCode,
     ...(credential?.authType === AUTH_TYPES.PRIVATE_TOKEN
       ? { 'private-token': credential.token }
       : {}),
@@ -37,13 +37,13 @@ export function createApiClient({
     devucLogin(account, password) {
       return requestJson({
         ...common,
-        url: config.devucUrl,
+        url: config.devuc.endpoint,
         method: 'POST',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
           'User-Agent': codeHubHeaders['User-Agent'],
-          'X-Apig-AppCode': config.devucAppCode,
+          'X-Apig-AppCode': config.devuc.appCode,
         },
         body: { account, password },
         validate: (value) =>
@@ -96,7 +96,7 @@ export function createApiClient({
       return requestJson({
         ...common,
         url: apiUrl(
-          config.apiBaseUrl,
+          config.codehub.endpoint,
           `/projects/${projectId}/merge_requests/${iid}/discussions`,
         ),
         method: 'POST',
@@ -111,7 +111,7 @@ export function createApiClient({
   function get(path, validate) {
     return requestJson({
       ...common,
-      url: apiUrl(config.apiBaseUrl, path),
+      url: apiUrl(config.codehub.endpoint, path),
       method: 'GET',
       headers: codeHubHeaders,
       validate,

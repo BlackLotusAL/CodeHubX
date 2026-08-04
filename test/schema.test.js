@@ -13,6 +13,7 @@ import {
 import {
   captureIo,
   jsonResponse,
+  MemoryConfigStore,
   MemoryCredentialStore,
   testEnv,
 } from '../test-support/helpers.js';
@@ -32,6 +33,7 @@ test('本地命令成功信封通过发布 Schema', async () => {
   const code = await runCli(['capabilities', '--request-id', 'schema.success'], {
     env: testEnv(),
     io: capture.io,
+    configStore: new MemoryConfigStore(),
     credentialStore: new MemoryCredentialStore(),
   });
   const envelope = JSON.parse(capture.stdout());
@@ -45,6 +47,7 @@ test('参数错误信封通过发布 Schema', async () => {
   const code = await runCli(['mr', 'view', '0', '-R', '2'], {
     env: testEnv(),
     io: capture.io,
+    configStore: new MemoryConfigStore(),
     credentialStore: new MemoryCredentialStore(),
   });
   const envelope = JSON.parse(capture.stderr());
@@ -121,6 +124,7 @@ test('每个业务命令的规范字段结果都通过发布 Schema', async () =
     const code = await runCli(item.argv, {
       env: testEnv(),
       io: capture.io,
+      configStore: new MemoryConfigStore(),
       credentialStore: new MemoryCredentialStore({
         authType: AUTH_TYPES.PRIVATE_TOKEN,
         token: 'schema-token',
@@ -174,6 +178,7 @@ test('认证命令的成功结果都通过发布 Schema', async () => {
     const code = await runCli(item.argv, {
       env: testEnv(),
       io: capture.io,
+      configStore: new MemoryConfigStore(),
       credentialStore: item.store,
       interactive: item.interactive,
       promptLogin: item.promptLogin,
@@ -187,4 +192,22 @@ test('认证命令的成功结果都通过发布 Schema', async () => {
       `${item.name}: ${JSON.stringify(validateSuccess.errors)}`,
     );
   }
+});
+
+test('配置初始化成功结果通过发布 Schema', async () => {
+  const capture = captureIo();
+  const code = await runCli(
+    ['config', 'init', '--output', 'json', '--request-id', 'schema.config'],
+    {
+      env: testEnv(),
+      io: capture.io,
+      configStore: new MemoryConfigStore(),
+      credentialStore: new MemoryCredentialStore(),
+    },
+  );
+  const envelope = JSON.parse(capture.stdout());
+
+  assert.equal(code, 0);
+  assert.equal(envelope.command, 'config.init');
+  assert.equal(validateSuccess(envelope), true, JSON.stringify(validateSuccess.errors));
 });

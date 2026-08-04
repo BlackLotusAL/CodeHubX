@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { arch, platform } from 'node:os';
 import { createApiClient } from './api.js';
-import { loadConfig } from './config.js';
+import { createConfigStore } from './config.js';
 import {
   AUTH_TYPES,
   CLI_VERSION,
@@ -77,6 +77,13 @@ export async function runCli(argv, dependencies = {}) {
       }));
   const credentialStore =
     dependencies.credentialStore ?? new GitCredentialStore({ env });
+  const configStore =
+    dependencies.configStore ??
+    createConfigStore({
+      env,
+      platform: dependencies.platform ?? process.platform,
+      homeDirectory: dependencies.homeDirectory,
+    });
   const fallbackRequestId = inferredRequestId(argv) || createRequestId();
   const fallbackCommand = inferCommand(argv);
   const fallbackOutput = inferredOutput(argv, fallbackCommand);
@@ -98,10 +105,7 @@ export async function runCli(argv, dependencies = {}) {
   const execute = async (command, positional, rawOptions) => {
     const options = resolveGlobalOptions(rawOptions, command);
     const requestId = options.requestId ?? fallbackRequestId;
-    const config =
-      command === 'version' || command === 'capabilities'
-        ? null
-        : loadConfig();
+    const config = requiresConfig(command) ? await configStore.load() : null;
 
     const context = {
       command,
@@ -109,6 +113,7 @@ export async function runCli(argv, dependencies = {}) {
       options,
       requestId,
       config,
+      configStore,
       io,
       readStdin,
       interactive,
@@ -118,10 +123,9 @@ export async function runCli(argv, dependencies = {}) {
       sleep: dependencies.sleep,
       random: dependencies.random,
       signal: dependencies.signal,
-      sensitiveValues: new Set([
-        config?.apiAppCode,
-        config?.devucAppCode,
-      ]),
+      sensitiveValues: new Set(
+        [config?.codehub.appCode, config?.devuc.appCode].filter(Boolean),
+      ),
     };
 
     const { data, warnings = [] } = await executeCommand(context);
@@ -209,6 +213,16 @@ async function executeCommand(context) {
           write_auto_retry: false,
         },
       };
+
+    case 'config.init': {
+      const result = await context.configStore.init();
+      return {
+        data: {
+          created: result.created,
+          config_path: result.configPath,
+        },
+      };
+    }
 
     case 'auth.login':
       return login(context);
@@ -315,7 +329,7 @@ async function login(context) {
     }
     context.sensitiveValues.add(token);
     await credentialStore.save(
-      config.apiHost,
+      config.codehub.host,
       AUTH_TYPES.PRIVATE_TOKEN,
       token,
     );
@@ -343,7 +357,11 @@ async function login(context) {
   const token = result.data.result.newToken;
   context.sensitiveValues.add(token);
   password = undefined;
-  await credentialStore.save(config.apiHost, AUTH_TYPES.X_AUTH_TOKEN, token);
+  await credentialStore.save(
+    config.codehub.host,
+    AUTH_TYPES.X_AUTH_TOKEN,
+    token,
+  );
 
   return {
     data: loginResult(config, AUTH_TYPES.X_AUTH_TOKEN),
@@ -353,7 +371,7 @@ async function login(context) {
 async function authStatus(context) {
   const credential = await resolveCredential({
     store: context.credentialStore,
-    host: context.config.apiHost,
+    host: context.config.codehub.host,
     allowMissing: true,
   });
 
@@ -362,17 +380,17 @@ async function authStatus(context) {
       configured: Boolean(credential),
       credential_source: credential?.source ?? null,
       authentication_type: credential?.authType ?? null,
-      api_host: context.config.apiOrigin,
+      api_host: context.config.codehub.origin,
     },
   };
 }
 
 async function authLogout(context) {
-  await context.credentialStore.clear(context.config.apiHost);
+  await context.credentialStore.clear(context.config.codehub.host);
   return {
     data: {
       credential_helper_cleared: true,
-      api_host: context.config.apiOrigin,
+      api_host: context.config.codehub.origin,
     },
   };
 }
@@ -428,7 +446,7 @@ async function authenticatedApi(context) {
 async function getCredential(context) {
   const credential = await resolveCredential({
     store: context.credentialStore,
-    host: context.config.apiHost,
+    host: context.config.codehub.host,
   });
   context.sensitiveValues.add(credential.token);
   return credential;
@@ -456,7 +474,7 @@ function apiFor(context, credential) {
 
 function resolveGlobalOptions(options, command) {
   const output = validateOutput(
-    options.output ?? (command === 'auth.login' ? 'human' : 'json'),
+    options.output ?? (humanByDefault(command) ? 'human' : 'json'),
   );
   const requestId = options.requestId
     ? validateRequestId(options.requestId)
@@ -486,7 +504,7 @@ function loginResult(config, authType) {
     configured: true,
     credential_source: 'credential_helper',
     authentication_type: authType,
-    api_host: config.apiOrigin,
+    api_host: config.codehub.origin,
   };
 }
 
@@ -516,7 +534,7 @@ function inferredOutput(argv, command) {
   if (output === 'human' || output === 'json') {
     return output;
   }
-  return command === 'auth.login' ? 'human' : 'json';
+  return humanByDefault(command) ? 'human' : 'json';
 }
 
 function optionValue(argv, name) {
@@ -538,6 +556,7 @@ function inferCommand(argv) {
     ['auth', 'login'],
     ['auth', 'status'],
     ['auth', 'logout'],
+    ['config', 'init'],
     ['repo', 'list'],
     ['repo', 'view'],
     ['mr', 'list'],
@@ -562,4 +581,12 @@ function inferCommand(argv) {
     }
   }
   return 'unknown';
+}
+
+function requiresConfig(command) {
+  return !new Set(['version', 'capabilities', 'config.init']).has(command);
+}
+
+function humanByDefault(command) {
+  return command === 'auth.login' || command === 'config.init';
 }

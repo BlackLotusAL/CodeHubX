@@ -3,15 +3,14 @@
 - 文档状态：Draft
 - 产品版本：MVP / 0.1
 - 文档版本：1.0
-- 更新日期：2026-08-01
-- API 依据：[API 接口清单](./api-interfaces.md)
-- 远期需求基线：[CodeHub CLI 需求基线](./codehub-cli-requirements.md)
+- 更新日期：2026-08-05
+- API 依据：[API 接口清单](./API.md)
 
 ## 1. 文档目的
 
 本文定义 CodeHub CLI MVP 的产品定位、功能范围、命令接口、机器协议、安全边界和验收标准，作为产品、研发和测试共同使用的交付依据。
 
-MVP 只承诺封装 `api-interfaces.md` 已明确记录的 7 组接口。`codehub-cli-requirements.md` 中的 diff、inline discussion、一致性快照、条件写和服务端幂等等能力属于远期需求基线，不属于本次 MVP 的交付承诺。
+MVP 只承诺封装 `API.md` 已明确记录的 7 组接口。diff、inline discussion、一致性快照、条件写和服务端幂等等能力不属于本次 MVP 的交付承诺。
 
 本文中的“必须”表示 MVP 发布前不可缺少；“应该”表示默认实现要求，只有出现明确技术阻塞时才能调整并记录原因。
 
@@ -55,7 +54,7 @@ CodeHub CLI 的定位是：
 
 | 维度 | MVP 标准 |
 | --- | --- |
-| API 覆盖 | `api-interfaces.md` 中 7 组 API 均有对应命令或认证流程 |
+| API 覆盖 | `API.md` 中 7 组 API 均有对应命令或认证流程 |
 | 机器协议 | 所有 JSON 成功结果通过 `codehub.cli/v1` Schema 校验 |
 | 错误协议 | JSON 模式失败时 stdout 为空，stderr 只有一个结构化错误对象 |
 | 安全 | 自动化测试和发布验收中凭据泄漏数量为 0 |
@@ -139,6 +138,17 @@ CodeHub CLI 的定位是：
 - `write_auto_retry: false`。
 
 该命令不得读取凭据或发起网络请求。
+
+#### `codehub config init`
+
+- 在当前用户的配置目录创建 `codehub/config.json`，写入随 CLI 发布的默认服务配置。
+- Windows 使用 `%APPDATA%\codehub\config.json`；Linux 优先使用
+  `$XDG_CONFIG_HOME/codehub/config.json`，否则使用 `~/.config/codehub/config.json`。
+- 配置已存在且有效时不得覆盖，返回 `created: false`；配置已存在但无效时返回
+  `CONFIG_INVALID`。
+- 命令默认输出 human，支持 `--output json`；成功结果只包含是否创建和配置路径，
+  不显示 endpoint 或 AppCode。
+- 该命令不得读取认证凭据、发起网络请求或要求交互式终端。
 
 ### 5.3 认证命令
 
@@ -258,15 +268,42 @@ codehub mr comment create <iid> \
 
 ## 6. 认证、配置与请求协议
 
-### 6.1 固定服务配置与凭据存储
+### 6.1 用户服务配置与凭据存储
 
-MVP 面向单一公司 CodeHub 环境，固定内置 `api-interfaces.md` 记录的当前服务地址和 AppCode。CLI 不提供命令行参数、环境变量或配置文件来覆盖这些值，也不从环境变量读取认证 token。认证凭据只能通过 `codehub auth login` 写入 Git Credential Helper，业务命令只从 Credential Helper 读取。
+MVP 从用户配置文件读取 DevUC 与 CodeHub 的 endpoint 和 AppCode。首次使用时由人类执行
+`codehub config init` 创建配置；CLI 不提供命令行参数或环境变量覆盖配置字段，也不从
+环境变量读取认证 token。认证凭据只能通过 `codehub auth login` 写入 Git Credential
+Helper，业务命令只从 Credential Helper 读取。
+
+配置结构固定为：
+
+```json
+{
+  "devuc": {
+    "endpoint": "<HTTPS endpoint>",
+    "appCode": "<X-Apig-AppCode>"
+  },
+  "codehub": {
+    "endpoint": "<HTTPS endpoint>",
+    "appCode": "<X-Apig-AppCode>"
+  }
+}
+```
 
 要求：
 
-- 内置服务 URL 必须为 HTTPS URL；MVP 不允许通过配置关闭 TLS 校验。
+- 配置不存在时，除 `version`、`capabilities` 和 `config init` 外的命令返回
+  `CONFIG_REQUIRED`，且不得读取凭据或访问网络。
+- 配置必须是严格 JSON 对象，不允许缺失或未知字段；兼容 UTF-8 BOM。
+- endpoint 必须是 HTTPS URL，不能包含用户名、密码、query 或 fragment；MVP 不允许关闭
+  TLS 校验。
+- AppCode 必须是非空且不包含控制字符的合法 HTTP Header 值。
+- 配置读取、解析或校验失败分别映射为稳定的配置错误，错误中不得包含配置内容。
 - AppCode、token 和密码均视为敏感信息并执行相同级别的输出脱敏。
-- MVP 不创建包含 token 的项目级或用户级明文配置文件。
+- `config init` 在 Linux 上以用户专用权限创建目录和文件；Windows 继承用户配置目录 ACL。
+- 用户配置只保存 endpoint 与 AppCode，不得保存 token、账号或密码。
+- CodeHub endpoint host 改变后使用独立的 Credential Helper 记录，并要求人类为新 host
+  重新登录。
 
 ### 6.2 身份认证与权限边界
 
@@ -282,21 +319,21 @@ MVP 面向单一公司 CodeHub 环境，固定内置 `api-interfaces.md` 记录�
 DevUC 请求必须携带：
 
 ```text
-X-Apig-AppCode: <DevUC AppCode>
+X-Apig-AppCode: <config.devuc.appCode>
 Content-Type: application/json
 ```
 
 CodeHub API 请求必须携带：
 
 ```text
-X-Apig-AppCode: <CodeHub AppCode>
+X-Apig-AppCode: <config.codehub.appCode>
 private-token: <token>
 ```
 
 或：
 
 ```text
-X-Apig-AppCode: <CodeHub AppCode>
+X-Apig-AppCode: <config.codehub.appCode>
 X-Auth-token: <token>
 ```
 
@@ -389,6 +426,9 @@ JSON 模式失败时 stdout 必须为空，stderr 只输出一个 JSON 对象：
 
 ```text
 INVALID_ARGUMENT
+CONFIG_REQUIRED
+CONFIG_INVALID
+CONFIG_ERROR
 CONFIG_CONFLICT
 AUTH_REQUIRED
 AUTH_FAILED
@@ -428,7 +468,7 @@ UNSUPPORTED_CAPABILITY
 ### 7.4 human 输出
 
 - `--output human` 面向人工查看，采用无边框对齐表格、紧凑条目和详情分区。
-- 仓库列表同时展示 SSH/HTTPS clone URL；MR 列表展示 IID、状态、标题、作者、源/目标分支和更新时间；Commit 使用包含父 SHA 的紧凑卡片。
+- 仓库列表首行按 ID、仓库路径、更新时间对齐，SSH/HTTPS clone URL 分别使用独立且 URL 起始列一致的行；MR 列表展示 IID、状态、标题、作者、源/目标分支和更新时间；Commit 使用包含父 SHA 的紧凑卡片。
 - 列表时间使用相对时间，超过 30 天显示日期；详情时间统一显示 RFC 3339 UTC。
 - 真实 TTY 可使用克制状态色；重定向、`NO_COLOR`、`CLICOLOR=0`、`TERM=dumb` 时不输出 ANSI，`CLICOLOR_FORCE` 可强制 human 颜色。
 - 输出根据终端宽度换行或截断，中文、全角字符和 Emoji 必须按实际显示宽度对齐。
@@ -471,9 +511,9 @@ UNSUPPORTED_CAPABILITY
 ### 9.3 稳定性与并发
 
 - 每次命令执行均为独立进程，不依赖上一次命令保留的内存状态。
-- 除 Git Credential Helper 中的凭据外，不持有跨命令的隐式业务状态。
+- 除显式用户配置和 Git Credential Helper 中的凭据外，不持有跨命令的隐式业务状态。
 - 多个只读命令可并发运行；不得用全局临时文件传递 token。
-- 本地命令 `version` 和 `capabilities` 不依赖网络或认证。
+- 本地命令 `version`、`capabilities` 和 `config init` 不依赖网络或认证。
 - 收到终止信号时尽快取消未完成请求并返回退出码 `130`。
 
 ### 9.4 可观测性
@@ -514,7 +554,13 @@ UNSUPPORTED_CAPABILITY
 - 每个命令只输出检视字段白名单，平台 ID 转换为字符串，缺失字段固定为 `null`。
 - 包含 reviewer、assignee、权限、统计和未知字段的完整响应 fixture 不得将这些字段泄漏到输出。
 
-### 11.2 认证与凭据测试
+### 11.2 配置、认证与凭据测试
+
+- 覆盖 Windows APPDATA、Linux XDG 配置目录和 Linux home fallback 的路径解析。
+- `config init` 排他创建配置且可安全重复执行；已有损坏配置不得被覆盖。
+- 缺失、未知字段、不安全 endpoint、Header 注入和 UTF-8 BOM 均按契约处理。
+- 缺少配置时返回 `CONFIG_REQUIRED`，并确认未读取凭据或访问网络。
+- 配置命令与所有错误、human/JSON 输出不得泄漏 endpoint 或 AppCode。
 
 - 登录向导可通过方向键选择 private token 或 DevUC，敏感输入使用掩码显示，并能通过 Credential Helper 保存、读取和删除认证 token。
 - 非 TTY、`--no-input` 和旧的非交互登录参数均在读取凭据前被拒绝；`Ctrl+C` 返回退出码 `130`。
@@ -554,7 +600,7 @@ UNSUPPORTED_CAPABILITY
 
 ### 11.6 发布验收
 
-- 在 Node.js 22 的 Linux 和 Windows 环境完成 npm 安装、帮助、version、capabilities 和全部命令端到端测试。
+- 在 Node.js 22 的 Linux 和 Windows 环境完成 npm 安装、帮助、version、capabilities、config init 和全部命令端到端测试。
 - 使用模拟服务完成自动化测试，不依赖生产凭据。
 - 发布候选版本在专用内部测试 Group、Project 和 MR 上执行一次受控冒烟测试。
 - 冒烟测试不得使用生产 MR；测试评论应使用明确的测试标识，避免被误认为正式评审意见。
@@ -575,12 +621,12 @@ UNSUPPORTED_CAPABILITY
 | 评论 API 无条件写和幂等 | 可能产生过期或重复评论 | 强制确认、不自动重试、返回明确 warning |
 | DevUC token 有效期未知 | Token 可能在保存后失效 | `auth status` 只报告本地凭据状态；业务请求收到 401 时返回认证错误 |
 | Git Credential Helper 未配置 | 无法持久化登录凭据 | 返回明确配置错误；由人类完成 Helper 配置和登录 |
-| AppCode 或服务地址变化 | 内置配置失效 | 更新内置值、通过回归测试后发布新版本 |
+| AppCode 或服务地址变化 | 请求目标或认证配置失效 | 由人类更新用户配置；host 改变后重新登录 |
 | 服务端响应字段变化 | Agent 解析失败 | 使用固定检视字段投影、缺失值返回 `null`、维护逐命令 Schema 兼容测试 |
 
 ## 14. 假设
 
 - 目标环境已经安装 Git，以便复用 Git Credential Helper；Git 的 clone/fetch 能力不由本产品重复实现。
-- 当前 `api-interfaces.md` 是 MVP 唯一可信的服务端能力来源，未记录的接口、参数和响应 Header 一律不作为交付承诺。
+- 当前 `API.md` 是 MVP 唯一可信的服务端能力来源，未记录的接口、参数和响应 Header 一律不作为交付承诺。
 - 内部 npm 发布渠道和最终包名由发布规范确定，可执行文件名始终为 `codehub`。
-- 本阶段不编写技术架构文档，不改变 `codehub-cli-requirements.md` 的远期需求内容。
+- 本阶段不编写独立的技术架构文档。

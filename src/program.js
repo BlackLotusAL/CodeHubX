@@ -16,7 +16,10 @@ export function createProgram({ execute, io }) {
       writeErr: () => {},
       outputError: () => {},
     })
-    .option('--output <json|human>', '输出格式（业务命令默认 json，登录默认 human）')
+    .option(
+      '--output <json|human>',
+      '输出格式（业务命令默认 json，登录和配置初始化默认 human）',
+    )
     .option('--request-id <id>', '调用关联 ID')
     .option('--timeout <duration>', '单次 HTTP 请求超时', DEFAULTS.timeout)
     .option('--no-input', '禁止交互式提示')
@@ -31,6 +34,12 @@ export function createProgram({ execute, io }) {
     .command('capabilities')
     .description('显示当前 CLI 的机器能力清单')
     .action(action('capabilities'));
+
+  const config = program.command('config').description('管理 CodeHub 服务配置');
+  config
+    .command('init')
+    .description('在用户配置目录初始化 CodeHub 服务配置')
+    .action(action('config.init'));
 
   const auth = program.command('auth').description('管理 CodeHub 凭据');
   auth

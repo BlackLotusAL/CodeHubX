@@ -18,6 +18,7 @@
       "enum": [
         "version",
         "capabilities",
+        "config.init",
         "auth.login",
         "auth.status",
         "auth.logout",
@@ -52,6 +53,12 @@
       "properties": {
         "command": { "const": "capabilities" },
         "data": { "$ref": "#/$defs/capabilities" }
+      }
+    },
+    {
+      "properties": {
+        "command": { "const": "config.init" },
+        "data": { "$ref": "#/$defs/configInit" }
       }
     },
     {
@@ -203,6 +210,15 @@
         "inline_discussion": { "type": "boolean" },
         "write_requires_confirmation": { "type": "boolean" },
         "write_auto_retry": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "configInit": {
+      "type": "object",
+      "required": ["created", "config_path"],
+      "properties": {
+        "created": { "type": "boolean" },
+        "config_path": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },

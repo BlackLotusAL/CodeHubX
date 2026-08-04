@@ -56,21 +56,80 @@ test('JSON 成功与错误始终两空格缩进、单文档、无 ANSI', () => {
   assert.deepEqual(JSON.parse(errorCapture.stderr()), error);
 });
 
-test('repo human 列表以紧凑条目显示两种 clone URL', () => {
-  const output = renderHuman(
-    'repo.list',
-    projectRepoList([repoApiFixture]),
-    [],
-    { columns: 120, now: NOW, env: {}, stdoutIsTTY: false },
-  );
+test('repo human 首行按列对齐，SSH 与 HTTPS 使用独立且对齐的行', () => {
+  const data = projectRepoList([
+    repoApiFixture,
+    {
+      ...repoApiFixture,
+      id: 12,
+      path_with_namespace: 'platform/another-repository',
+      updated_at: '2026-08-01T08:29:30Z',
+    },
+  ]);
 
-  assert.match(output, /9001\s+platform\/agent-tools\s+1 天前/);
-  assert.match(output, /SSH git@codehub\.test:platform\/agent-tools\.git/);
-  assert.match(
-    output,
-    /HTTPS https:\/\/codehub\.test\/platform\/agent-tools\.git/,
-  );
-  assert.doesNotMatch(output, ANSI_PATTERN);
+  for (const columns of [80, 100, 120]) {
+    const output = renderHuman('repo.list', data, [], {
+      columns,
+      now: NOW,
+      env: {},
+      stdoutIsTTY: false,
+    });
+    const lines = output.split('\n');
+    const repositoryColumn = lines[0].indexOf('REPOSITORY');
+    const updatedColumn = lines[0].indexOf('UPDATED');
+
+    assert.match(lines[0], /^ID\s+REPOSITORY\s+UPDATED$/);
+    assert.equal(lines[1].indexOf('platform/agent-tools'), repositoryColumn);
+    assert.equal(lines[1].indexOf('1 天前'), updatedColumn);
+    assert.equal(
+      lines[5].indexOf('platform/another-repository'),
+      repositoryColumn,
+    );
+    assert.equal(lines[5].indexOf('刚刚'), updatedColumn);
+
+    assert.match(
+      lines[2],
+      /^\s+SSH\s+git@codehub\.test:platform\/agent-tools\.git$/,
+    );
+    assert.match(
+      lines[3],
+      /^\s+HTTPS\s+https:\/\/codehub\.test\/platform\/agent-tools\.git$/,
+    );
+    assert.equal(lines[2].indexOf('git@'), lines[3].indexOf('https://'));
+    assert.doesNotMatch(lines[2], /HTTPS/);
+    assert.ok(
+      lines.every((line) => stringWidth(line) <= columns),
+      `存在超过 ${columns} 列的行：\n${output}`,
+    );
+    assert.doesNotMatch(output, ANSI_PATTERN);
+  }
+});
+
+test('repo human 的长 clone URL 在各自行内续行，不会互相拼接', () => {
+  const [repository] = projectRepoList([
+    {
+      ...repoApiFixture,
+      ssh_url_to_repo:
+        'git@codehub.test:platform/a-very-long-repository-name-for-review-agents.git',
+      http_url_to_repo:
+        'https://codehub.test/platform/a-very-long-repository-name-for-review-agents.git',
+    },
+  ]);
+  const output = renderHuman('repo.list', [repository], [], {
+    columns: 50,
+    now: NOW,
+    env: {},
+    stdoutIsTTY: false,
+  });
+  const lines = output.split('\n');
+  const sshLine = lines.findIndex((line) => /\bSSH\b/.test(line));
+  const httpsLine = lines.findIndex((line) => /\bHTTPS\b/.test(line));
+
+  assert.ok(sshLine > 0);
+  assert.ok(httpsLine > sshLine);
+  assert.equal(lines[sshLine].indexOf('git@'), lines[httpsLine].indexOf('https://'));
+  assert.ok(lines.every((line) => !(/\bSSH\b/.test(line) && /\bHTTPS\b/.test(line))));
+  assert.ok(lines.every((line) => stringWidth(line) <= 50), output);
 });
 
 test('MR human 列表按显示宽度对齐中文和 Emoji，并适配 80/120 列', () => {

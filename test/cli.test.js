@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { runCli } from '../src/cli.js';
-import { AUTH_TYPES, DEFAULTS } from '../src/constants.js';
+import { AUTH_TYPES } from '../src/constants.js';
 import { CliError } from '../src/errors.js';
 import {
   commentApiFixture,
@@ -14,7 +14,9 @@ import {
 import {
   captureIo,
   jsonResponse,
+  MemoryConfigStore,
   MemoryCredentialStore,
+  TEST_CONFIG,
   testEnv,
 } from '../test-support/helpers.js';
 
@@ -30,6 +32,7 @@ async function invoke(argv, overrides = {}) {
   const code = await runCli(argv, {
     env: testEnv(overrides.env),
     io: capture.io,
+    configStore: overrides.configStore ?? new MemoryConfigStore(),
     credentialStore: store,
     fetchImpl: overrides.fetchImpl,
     readStdin: overrides.readStdin,
@@ -83,6 +86,65 @@ test('capabilities 准确声明写入限制', async () => {
   assert.equal(data.write_auto_retry, false);
 });
 
+test('config init 不读取已有配置、凭据或网络且默认输出 human', async () => {
+  const configStore = new MemoryConfigStore();
+  let credentialReads = 0;
+  let requests = 0;
+  const result = await invoke(['config', 'init'], {
+    configStore,
+    credentialStore: {
+      async get() {
+        credentialReads += 1;
+        return null;
+      },
+    },
+    fetchImpl: async () => {
+      requests += 1;
+      return jsonResponse({});
+    },
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(configStore.loads, 0);
+  assert.equal(configStore.initialisations, 1);
+  assert.equal(credentialReads, 0);
+  assert.equal(requests, 0);
+  assert.match(result.stdout, /配置初始化完成/);
+  assert.match(result.stdout, /config\.json/);
+  assert.doesNotMatch(result.stdout, /app-code|w3tokens|api\/v4/);
+});
+
+test('缺少用户配置时业务命令先返回 CONFIG_REQUIRED', async () => {
+  let credentialReads = 0;
+  let requests = 0;
+  const result = await invoke(['repo', 'view', '42'], {
+    configStore: {
+      async load() {
+        throw new CliError(
+          'CONFIG_REQUIRED',
+          '尚未初始化 CodeHub 配置，请先执行 codehub config init。',
+        );
+      },
+    },
+    credentialStore: {
+      async get() {
+        credentialReads += 1;
+        return null;
+      },
+    },
+    fetchImpl: async () => {
+      requests += 1;
+      return jsonResponse({});
+    },
+  });
+  const envelope = JSON.parse(result.stderr);
+
+  assert.equal(result.code, 3);
+  assert.equal(envelope.error.code, 'CONFIG_REQUIRED');
+  assert.equal(credentialReads, 0);
+  assert.equal(requests, 0);
+});
+
 test('private token 交互登录将凭据保存到 Credential Helper', async () => {
   const store = new MemoryCredentialStore();
   const result = await invoke(['auth', 'login'], {
@@ -121,8 +183,11 @@ test('DevUC 登录使用独立 AppCode，只保存 newToken 而不保存密码',
   });
 
   assert.equal(result.code, 0);
-  assert.equal(request.url, DEFAULTS.devucUrl);
-  assert.equal(request.init.headers['X-Apig-AppCode'], DEFAULTS.devucAppCode);
+  assert.equal(request.url, TEST_CONFIG.devuc.endpoint);
+  assert.equal(
+    request.init.headers['X-Apig-AppCode'],
+    TEST_CONFIG.devuc.appCode,
+  );
   assert.equal(request.init.headers['private-token'], undefined);
   assert.deepEqual(JSON.parse(request.init.body), {
     account: 'agent123',
@@ -315,10 +380,14 @@ test('repo list 映射 URL、互斥认证 Header、ID 字符串与分页 warning
   assert.equal(result.code, 0);
   assert.equal(
     request.url,
-    `${DEFAULTS.apiBaseUrl}/groups/42/projects`,
+    `${TEST_CONFIG.codehub.endpoint}/groups/42/projects`,
   );
   assert.equal(request.init.headers['private-token'], 'test-token');
   assert.equal(request.init.headers['X-Auth-token'], undefined);
+  assert.equal(
+    request.init.headers['X-Apig-AppCode'],
+    TEST_CONFIG.codehub.appCode,
+  );
   assert.deepEqual(envelope.data, [
     {
       repo_id: '9001',
@@ -380,11 +449,11 @@ test('mr list 默认查询 opened，显式 --state all 仍可查询历史记录'
   assert.equal(all.code, 0);
   assert.equal(
     urls[0],
-    `${DEFAULTS.apiBaseUrl}/projects/77/isource/merge_requests?state=opened`,
+    `${TEST_CONFIG.codehub.endpoint}/projects/77/isource/merge_requests?state=opened`,
   );
   assert.equal(
     urls[1],
-    `${DEFAULTS.apiBaseUrl}/projects/77/isource/merge_requests?state=all`,
+    `${TEST_CONFIG.codehub.endpoint}/projects/77/isource/merge_requests?state=all`,
   );
   assert.equal(JSON.parse(result.stdout).data[0].repo_id, '77');
   assert.doesNotMatch(result.stdout, /reviewer|assignee/);
@@ -394,19 +463,19 @@ test('Project、MR 详情与 Commit 的 API path 完整映射', async () => {
   const cases = [
     {
       argv: ['repo', 'view', '12'],
-      expected: `${DEFAULTS.apiBaseUrl}/projects/12`,
+      expected: `${TEST_CONFIG.codehub.endpoint}/projects/12`,
       response: { id: 12, name: 'project' },
     },
     {
       argv: ['mr', 'view', '7', '-R', '12'],
       expected:
-        `${DEFAULTS.apiBaseUrl}/projects/12/isource/merge_requests/7`,
+        `${TEST_CONFIG.codehub.endpoint}/projects/12/isource/merge_requests/7`,
       response: { id: 90, iid: 7, project_id: 12 },
     },
     {
       argv: ['mr', 'commits', '7', '-R', '12'],
       expected:
-        `${DEFAULTS.apiBaseUrl}/projects/12/merge_requests/7/commits`,
+        `${TEST_CONFIG.codehub.endpoint}/projects/12/merge_requests/7/commits`,
       response: [{ id: 'abc123', parent_ids: ['def456'] }],
     },
   ];

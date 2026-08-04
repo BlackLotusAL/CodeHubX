@@ -1,0 +1,10 @@
+{
+  "devuc": {
+    "endpoint": "https://devuc.sicarrier.com/ssoproxysvr/v2/w3tokens",
+    "appCode": "b7556594b93342d7a5b897f87a934dee89198a5ee7754799b9e8b998899c53cf"
+  },
+  "codehub": {
+    "endpoint": "https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4",
+    "appCode": "92da42a0761f48e6877531ec4fadeaa91ed7f1bddbb9491dbd3d543217173e68"
+  }
+}

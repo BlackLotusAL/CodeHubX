@@ -92,6 +92,13 @@ export function renderHuman(command, data, warnings = [], options = {}) {
         ),
       );
       break;
+    case 'config.init':
+      sections.push(
+        `${context.color.green('✓')} ${context.color.bold(
+          data.created ? '配置初始化完成' : '配置已经存在',
+        )}\n${renderDefinitionList([['配置文件', data.config_path]], context)}`,
+      );
+      break;
     case 'auth.login':
       sections.push(
         `${context.color.green('✓')} ${context.color.bold('登录成功')}\n${renderDefinitionList(
@@ -160,42 +167,138 @@ function renderRepoList(repositories, context) {
     return '没有结果。';
   }
 
-  return repositories
-    .map((repository) => {
-      const id = repository.repo_id
-        ? context.color.cyan(printable(repository.repo_id))
-        : null;
-      const name = context.color.bold(
-        printable(repository.full_name ?? '未命名仓库'),
-      );
-      const updated = repository.updated_at
-        ? context.color.dim(relativeTime(repository.updated_at, context.now))
-        : null;
-      const archived = repository.archived
-        ? context.color.yellow('已归档')
-        : null;
-      const firstLine = [id, name, updated, archived].filter(Boolean).join('  ');
-      const cloneLine = [
-        repository.clone_urls?.ssh
-          ? `${context.color.dim('SSH')} ${printable(repository.clone_urls.ssh)}`
-          : null,
-        repository.clone_urls?.https
-          ? `${context.color.dim('HTTPS')} ${printable(repository.clone_urls.https)}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join('   ');
+  const rows = repositories.map((repository) => ({
+    repository,
+    id: repository.repo_id ? printable(repository.repo_id) : '',
+    name: printable(repository.full_name ?? '未命名仓库'),
+    updated: repository.updated_at
+      ? relativeTime(repository.updated_at, context.now)
+      : '',
+  }));
+  const idWidth = clamp(
+    Math.max(stringWidth('ID'), ...rows.map((row) => stringWidth(row.id))),
+    2,
+    18,
+  );
+  const updatedWidth = clamp(
+    Math.max(
+      stringWidth('UPDATED'),
+      ...rows.map((row) => stringWidth(row.updated)),
+    ),
+    7,
+    16,
+  );
+  const availableRepositoryWidth =
+    context.columns - idWidth - updatedWidth - 4;
+  const desiredRepositoryWidth = Math.max(
+    stringWidth('REPOSITORY'),
+    ...rows.map(
+      (row) =>
+        stringWidth(row.name) +
+        (row.repository.archived ? stringWidth(' [已归档]') : 0),
+    ),
+  );
+  const repositoryWidth = Math.min(
+    availableRepositoryWidth,
+    desiredRepositoryWidth,
+  );
 
-      return [
-        wrapWithIndent(firstLine, context.columns),
-        cloneLine
-          ? wrapWithIndent(cloneLine, context.columns, '  ', '    ')
-          : null,
-      ]
-        .filter(Boolean)
-        .join('\n');
-    })
-    .join('\n\n');
+  if (repositoryWidth < 12) {
+    return rows
+      .map((row) => renderRepoCard(row, context))
+      .join('\n\n');
+  }
+
+  const header = [
+    context.color.dim(padCell('ID', idWidth)),
+    context.color.dim(padCell('REPOSITORY', repositoryWidth)),
+    context.color.dim('UPDATED'),
+  ].join('  ');
+  const blocks = rows.map((row) => {
+    const metadata = [
+      context.color.cyan(
+        padCell(truncateText(row.id, idWidth), idWidth),
+      ),
+      renderRepoNameCell(row, repositoryWidth, context),
+      context.color.dim(truncateText(row.updated, updatedWidth)),
+    ].join('  ');
+    const cloneIndent = ' '.repeat(idWidth + 2);
+    const cloneUrls = renderRepoCloneUrls(
+      row.repository,
+      context,
+      cloneIndent,
+    );
+
+    return [metadata, ...cloneUrls].join('\n');
+  });
+
+  return [header, blocks.join('\n\n')].join('\n');
+}
+
+function renderRepoCard(row, context) {
+  const archived = row.repository.archived
+    ? context.color.yellow('[已归档]')
+    : null;
+  const heading = [
+    row.id ? context.color.cyan(row.id) : null,
+    context.color.bold(row.name),
+    archived,
+  ]
+    .filter(Boolean)
+    .join('  ');
+  const updated = row.updated
+    ? context.color.dim(`更新于 ${row.updated}`)
+    : null;
+
+  return [
+    wrapWithIndent(heading, context.columns),
+    updated ? wrapWithIndent(updated, context.columns, '  ', '  ') : null,
+    ...renderRepoCloneUrls(row.repository, context, '  '),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function renderRepoNameCell(row, width, context) {
+  const archivedMarker = ' [已归档]';
+  if (!row.repository.archived || stringWidth(archivedMarker) >= width) {
+    return padCell(
+      context.color.bold(
+        truncateText(
+          row.repository.archived ? `${row.name}${archivedMarker}` : row.name,
+          width,
+        ),
+      ),
+      width,
+    );
+  }
+
+  const nameWidth = width - stringWidth(archivedMarker);
+  const value = `${context.color.bold(
+    truncateText(row.name, nameWidth),
+  )} ${context.color.yellow('[已归档]')}`;
+  return padCell(value, width);
+}
+
+function renderRepoCloneUrls(repository, context, indent) {
+  const labelWidth = stringWidth('HTTPS');
+  return [
+    ['SSH', repository.clone_urls?.ssh],
+    ['HTTPS', repository.clone_urls?.https],
+  ]
+    .filter(([, url]) => Boolean(url))
+    .map(([label, url]) => {
+      const prefix = `${indent}${context.color.dim(
+        padCell(label, labelWidth),
+      )}  `;
+      const continuation = `${indent}${' '.repeat(labelWidth + 2)}`;
+      return wrapWithIndent(
+        printable(url),
+        context.columns,
+        prefix,
+        continuation,
+      );
+    });
 }
 
 function renderRepoView(repository, context) {

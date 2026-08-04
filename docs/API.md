@@ -2,13 +2,28 @@
 
 ---
 
+## 配置字段
+
+本文使用以下用户配置字段表示服务地址和 AppCode，不记录具体 endpoint 或 AppCode：
+
+| 配置字段                  | 用途                     |
+| ------------------------- | ------------------------ |
+| `config.devuc.endpoint`   | DevUC 授权接口的完整地址 |
+| `config.devuc.appCode`    | DevUC `X-Apig-AppCode`   |
+| `config.codehub.endpoint` | CodeHub API 的基础地址   |
+| `config.codehub.appCode`  | CodeHub `X-Apig-AppCode` |
+
+CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后。
+
+---
+
 ## 1. DevUC 授权
 
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `POST`                                                       |
-| **URL**          | `https://devuc.sicarrier.com/ssoproxysvr/v2/w3tokens`        |
-| **请求 Headers** | `X-Apig-AppCode: b7556594b93342d7a5b897f87a934dee89198a5ee7754799b9e8b998899c53cf` |
+| **URL**          | `${config.devuc.endpoint}`                                   |
+| **请求 Headers** | `X-Apig-AppCode: <config.devuc.appCode>`                     |
 | **请求 Body**    | ```json { "account": "<字母+数字>", "password": "<密码>" } ``` |
 | **响应 Body**    | ```json { "result": { "newToken": "xxx", "token": "xxx" }, "status": "ok" } ``` |
 
@@ -24,8 +39,8 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `GET`                                                        |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/groups/<group_id>/projects` |
-| **请求 Headers** | `X-Apig-AppCode: 92da42a0761f48e6877531ec4fadeaa91ed7f1bddbb9491dbd3d543217173e68` + `private-token` 或 `X-Auth-token` |
+| **URL**          | `${config.codehub.endpoint}/groups/<group_id>/projects`      |
+| **请求 Headers** | `X-Apig-AppCode: <config.codehub.appCode>` + `private-token` 或 `X-Auth-token` |
 | **请求 Body**    | 无                                                           |
 | **响应 Body**    | 返回 Project 数组                                            |
 
@@ -50,7 +65,7 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `GET`                                                        |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/projects/<project_id>` |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>`           |
 | **请求 Headers** | 同上（同 API #2）                                            |
 | **请求 Body**    | 无                                                           |
 | **响应 Body**    | 返回 Project 完整详情对象                                    |
@@ -91,7 +106,7 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `GET`                                                        |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/projects/<project_id>/isource/merge_requests` |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>/isource/merge_requests` |
 | **请求 Headers** | 同上                                                         |
 | **请求 Body**    | 无                                                           |
 | **响应 Body**    | 返回 Merge Request 数组                                      |
@@ -133,7 +148,7 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `GET`                                                        |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/projects/<project_id>/isource/merge_requests/<merge_request_iid>` |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>/isource/merge_requests/<merge_request_iid>` |
 | **请求 Headers** | 同上                                                         |
 | **请求 Body**    | 无                                                           |
 | **响应 Body**    | 返回单个 Merge Request 完整详情对象                          |
@@ -145,7 +160,7 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `GET`                                                        |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/projects/<project_id>/merge_requests/<merge_request_iid>/commits` |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>/merge_requests/<merge_request_iid>/commits` |
 | **请求 Headers** | 同上                                                         |
 | **请求 Body**    | 无                                                           |
 | **响应 Body**    | 返回 Commit 数组                                             |
@@ -171,7 +186,7 @@
 | 字段             | 内容                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | **Method**       | `POST`                                                       |
-| **URL**          | `https://repo-api-codeartsx-cn-southwest-2.sicarrier.com/api/v4/projects/<project_id>/merge_requests/<merge_request_iid>/discussions` |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>/merge_requests/<merge_request_iid>/discussions` |
 | **请求 Headers** | 同上                                                         |
 | **请求 Body**    | ```json { "body": "Testing", "severity": "major" } ```       |
 | **响应 Body**    | 返回创建的 Discussion 完整对象                               |
@@ -208,7 +223,8 @@
 1. **X-Auth-token**：通过 DevUC 授权（API #1）获取 `newToken`，在 Header 中携带 `X-Auth-token`
 2. **private-token**：使用 CodeHub 私有 token，在 Header 中携带 `private-token`
 
-所有请求需额外携带 Header：`X-Apig-AppCode`
+所有请求需额外携带 Header：`X-Apig-AppCode`，其值来自
+`config.codehub.appCode`。
 
 ### URL 参数说明
 
