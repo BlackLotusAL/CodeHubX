@@ -211,3 +211,53 @@ test('配置初始化成功结果通过发布 Schema', async () => {
   assert.equal(envelope.command, 'config.init');
   assert.equal(validateSuccess(envelope), true, JSON.stringify(validateSuccess.errors));
 });
+
+test('所有仿真命令的成功结果都通过发布 Schema', async () => {
+  const cases = [
+    ['config', 'init', '--simulate', '--output', 'json'],
+    ['auth', 'login', '--simulate', '--no-input', '--output', 'json'],
+    ['auth', 'status', '--simulate'],
+    ['auth', 'logout', '--simulate'],
+    ['repo', 'list', '1', '--simulate'],
+    ['repo', 'view', '9001', '--simulate'],
+    ['mr', 'list', '-R', '9001', '--simulate'],
+    ['mr', 'view', '17', '-R', '9001', '--simulate'],
+    ['mr', 'commits', '17', '-R', '9001', '--simulate'],
+    [
+      'mr',
+      'comment',
+      'create',
+      '17',
+      '-R',
+      '9001',
+      '--body-file',
+      '-',
+      '--confirm-write',
+      '--simulate',
+    ],
+  ];
+
+  for (const argv of cases) {
+    const capture = captureIo();
+    const code = await runCli(argv, {
+      env: testEnv(),
+      io: capture.io,
+      configStore: new MemoryConfigStore(),
+      credentialStore: new MemoryCredentialStore(),
+      fetchImpl: async () => {
+        throw new Error('仿真模式不应访问网络');
+      },
+      readStdin: async () => 'simulation review body',
+    });
+    const envelope = JSON.parse(capture.stdout());
+
+    assert.equal(code, 0, argv.join(' '));
+    assert.equal(capture.stderr(), '', argv.join(' '));
+    assert.equal(envelope.warnings[0].code, 'SIMULATION_MODE');
+    assert.equal(
+      validateSuccess(envelope),
+      true,
+      `${argv.join(' ')}: ${JSON.stringify(validateSuccess.errors)}`,
+    );
+  }
+});

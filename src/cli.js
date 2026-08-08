@@ -23,6 +23,11 @@ import {
 import { createProgram } from './program.js';
 import { runLoginPrompt } from './prompts.js';
 import {
+  createSimulationApiClient,
+  SIMULATION_CONFIG,
+  SIMULATION_CREDENTIAL,
+} from './simulation.js';
+import {
   projectCommentResult,
   projectCommitList,
   projectMergeRequestList,
@@ -105,7 +110,12 @@ export async function runCli(argv, dependencies = {}) {
   const execute = async (command, positional, rawOptions) => {
     const options = resolveGlobalOptions(rawOptions, command);
     const requestId = options.requestId ?? fallbackRequestId;
-    const config = requiresConfig(command) ? await configStore.load() : null;
+    const simulationEnabled = options.simulate && supportsSimulation(command);
+    const config = simulationEnabled
+      ? SIMULATION_CONFIG
+      : requiresConfig(command)
+        ? await configStore.load()
+        : null;
 
     const context = {
       command,
@@ -129,6 +139,9 @@ export async function runCli(argv, dependencies = {}) {
     };
 
     const { data, warnings = [] } = await executeCommand(context);
+    const outputWarnings = simulationEnabled
+      ? [WARNING.SIMULATION_MODE, ...warnings]
+      : warnings;
     const safeData = sanitiseForOutput(data, context.sensitiveValues);
     writeSuccess(
       io,
@@ -137,7 +150,7 @@ export async function runCli(argv, dependencies = {}) {
         command,
         requestId,
         safeData,
-        warnings,
+        outputWarnings,
       ),
       outputOptions,
     );
@@ -215,6 +228,14 @@ async function executeCommand(context) {
       };
 
     case 'config.init': {
+      if (options.simulate) {
+        return {
+          data: {
+            created: false,
+            config_path: '[simulation]/codehub/config.json',
+          },
+        };
+      }
       const result = await context.configStore.init();
       return {
         data: {
@@ -302,6 +323,11 @@ async function executeCommand(context) {
 
 async function login(context) {
   const { options, credentialStore, config } = context;
+  if (options.simulate) {
+    return {
+      data: loginResult(config, SIMULATION_CREDENTIAL.authType, 'simulation'),
+    };
+  }
   if (options.noInput) {
     throw new CliError(
       'INVALID_ARGUMENT',
@@ -369,6 +395,16 @@ async function login(context) {
 }
 
 async function authStatus(context) {
+  if (context.options.simulate) {
+    return {
+      data: {
+        configured: true,
+        credential_source: SIMULATION_CREDENTIAL.source,
+        authentication_type: SIMULATION_CREDENTIAL.authType,
+        api_host: context.config.codehub.origin,
+      },
+    };
+  }
   const credential = await resolveCredential({
     store: context.credentialStore,
     host: context.config.codehub.host,
@@ -386,6 +422,14 @@ async function authStatus(context) {
 }
 
 async function authLogout(context) {
+  if (context.options.simulate) {
+    return {
+      data: {
+        credential_helper_cleared: true,
+        api_host: context.config.codehub.origin,
+      },
+    };
+  }
   await context.credentialStore.clear(context.config.codehub.host);
   return {
     data: {
@@ -444,6 +488,9 @@ async function authenticatedApi(context) {
 }
 
 async function getCredential(context) {
+  if (context.options.simulate) {
+    return SIMULATION_CREDENTIAL;
+  }
   const credential = await resolveCredential({
     store: context.credentialStore,
     host: context.config.codehub.host,
@@ -453,6 +500,9 @@ async function getCredential(context) {
 }
 
 function apiFor(context, credential) {
+  if (context.options.simulate) {
+    return createSimulationApiClient();
+  }
   return createApiClient({
     config: context.config,
     credential,
@@ -499,10 +549,10 @@ function requiredRepo(options) {
   return parsePositiveId(options.repo, 'Project ID');
 }
 
-function loginResult(config, authType) {
+function loginResult(config, authType, credentialSource = 'credential_helper') {
   return {
     configured: true,
-    credential_source: 'credential_helper',
+    credential_source: credentialSource,
     authentication_type: authType,
     api_host: config.codehub.origin,
   };
@@ -585,6 +635,10 @@ function inferCommand(argv) {
 
 function requiresConfig(command) {
   return !new Set(['version', 'capabilities', 'config.init']).has(command);
+}
+
+function supportsSimulation(command) {
+  return !new Set(['version', 'capabilities']).has(command);
 }
 
 function humanByDefault(command) {

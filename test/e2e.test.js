@@ -32,6 +32,32 @@ test('真实进程可执行 version 和 human capabilities', async () => {
   assert.equal(human.stderr, '');
 });
 
+test('真实进程可在无配置和凭据时执行仿真查询', async () => {
+  const baseDirectory = await mkdtemp(join(tmpdir(), 'codehub-e2e-simulation-'));
+  const env = { ...process.env };
+  if (process.platform === 'win32') {
+    env.APPDATA = baseDirectory;
+  } else {
+    env.XDG_CONFIG_HOME = baseDirectory;
+  }
+
+  try {
+    const result = await execFileAsync(
+      process.execPath,
+      [bin, 'mr', 'view', '17', '-R', '9001', '--simulate'],
+      { env },
+    );
+    const envelope = JSON.parse(result.stdout);
+
+    assert.equal(envelope.data.repo_id, '9001');
+    assert.equal(envelope.data.iid, '17');
+    assert.equal(envelope.warnings[0].code, 'SIMULATION_MODE');
+    assert.equal(result.stderr, '');
+  } finally {
+    await rm(baseDirectory, { recursive: true, force: true });
+  }
+});
+
 test('真实进程可在用户目录初始化配置且不输出配置值', async (t) => {
   const baseDirectory = await mkdtemp(join(tmpdir(), 'codehub-e2e-config-'));
   t.after(() => rm(baseDirectory, { recursive: true, force: true }));

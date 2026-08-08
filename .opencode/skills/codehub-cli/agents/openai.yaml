@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodeHub CLI"
+  short_description: "Use CodeHub safely from coding agents"
+  default_prompt: "Use $codehub-cli to inspect a CodeHub merge request and report the review context."

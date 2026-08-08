@@ -22,6 +22,7 @@ export function createProgram({ execute, io }) {
     )
     .option('--request-id <id>', '调用关联 ID')
     .option('--timeout <duration>', '单次 HTTP 请求超时', DEFAULTS.timeout)
+    .option('--simulate', '使用内置仿真数据，不读取真实配置或凭据，也不访问网络')
     .option('--no-input', '禁止交互式提示')
     .option('-R, --repo <project-id>', 'CodeHub Project ID');
 

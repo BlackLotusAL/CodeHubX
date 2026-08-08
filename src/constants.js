@@ -11,6 +11,10 @@ export const AUTH_TYPES = Object.freeze({
 });
 
 export const WARNING = Object.freeze({
+  SIMULATION_MODE: {
+    code: 'SIMULATION_MODE',
+    message: '当前命令使用内置仿真数据，未读取真实配置或凭据，也未访问 CodeHub 服务。',
+  },
   PARTIAL_LIST_POSSIBLE: {
     code: 'PARTIAL_LIST_POSSIBLE',
     message: '服务端分页契约未知，返回的列表可能不是全量。',
