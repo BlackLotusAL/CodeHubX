@@ -1,5 +1,5 @@
 {
-  "name": "codehubx-cli",
+  "name": "codehub-cli",
   "version": "0.1.0",
   "description": "面向 AI Agent、自动化脚本和 CI 的 CodeHub 命令行客户端",
   "type": "module",

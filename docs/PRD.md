@@ -498,7 +498,7 @@ UNSUPPORTED_CAPABILITY
 - 使用 npm 包分发，可执行文件固定为 `codehub`。
 - 最低运行时为 Node.js 22。
 - 正式支持 Linux 和 Windows；macOS 只做尽力兼容，不作为 MVP 发布阻塞条件。
-- npm 包名由内部发布规范确定，不影响命令名。
+- npm 包名固定为 `codehub-cli`，可执行文件名保持为 `codehub`。
 - CLI 使用语义化版本；机器协议版本独立管理。
 
 ### 9.2 兼容性
@@ -628,5 +628,5 @@ UNSUPPORTED_CAPABILITY
 
 - 目标环境已经安装 Git，以便复用 Git Credential Helper；Git 的 clone/fetch 能力不由本产品重复实现。
 - 当前 `API.md` 是 MVP 唯一可信的服务端能力来源，未记录的接口、参数和响应 Header 一律不作为交付承诺。
-- 内部 npm 发布渠道和最终包名由发布规范确定，可执行文件名始终为 `codehub`。
+- 内部 npm 发布渠道由发布规范确定；npm 包名固定为 `codehub-cli`，可执行文件名始终为 `codehub`。
 - 本阶段不编写独立的技术架构文档。
