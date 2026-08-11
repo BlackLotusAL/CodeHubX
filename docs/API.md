@@ -1,10 +1,17 @@
 # API 接口清单
 
----
+## 鉴权方式
+
+所有 CodeHub API（API #2 ~ #7）支持两种鉴权方式：
+
+1. **X-Auth-token**：通过 DevUC 授权（API #1）获取 `newToken`，在 Header 中携带 `X-Auth-token`
+2. **private-token**：使用 CodeHub 私有 token，在 Header 中携带 `private-token`
+
+所有请求需额外携带 Header：`X-Apig-AppCode`，其值来自 `config.codehub.appCode`。
 
 ## 配置字段
 
-本文使用以下用户配置字段表示服务地址和 AppCode，不记录具体 endpoint 或 AppCode：
+本文使用以下用户配置字段表示服务地址和 AppCode，CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后：
 
 | 配置字段                  | 用途                     |
 | ------------------------- | ------------------------ |
@@ -12,8 +19,6 @@
 | `config.devuc.appCode`    | DevUC `X-Apig-AppCode`   |
 | `config.codehub.endpoint` | CodeHub API 的基础地址   |
 | `config.codehub.appCode`  | CodeHub `X-Apig-AppCode` |
-
-CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后。
 
 ---
 
@@ -27,10 +32,7 @@ CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后。
 | **请求 Body**    | ```json { "account": "<字母+数字>", "password": "<密码>" } ``` |
 | **响应 Body**    | ```json { "result": { "newToken": "xxx", "token": "xxx" }, "status": "ok" } ``` |
 
-**说明：**
-
-1. DevUC 授权后，调用 CodeHub API 时在 Header 中填写 `X-Auth-token`，值为响应 Body 中的 `newToken`，作为鉴权凭证。
-2. 也可使用 CodeHub 私有 token 鉴权，在 Header 中填写 `private-token`。
+DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-token` 鉴权的客户端须实现自动刷新 token
 
 ---
 
@@ -151,10 +153,10 @@ CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后。
 | **URL**          | `${config.codehub.endpoint}/projects/<project_id>/isource/merge_requests/<merge_request_iid>` |
 | **请求 Headers** | 同上                                                         |
 | **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回单个 Merge Request 完整详情对象                          |
+| **响应 Body**    | 返回单个 Merge Request 完整详情对象，字段参见 API #4         |
 
-**说明：**
-响应字段与 MR 列表 API (#4) 一致，但返回的是完整对象而非精简列表。当需要获取 MR 完整信息时使用此接口。
+---
+
 ## 6. 获取 Merge Request 中包含的 Commit
 
 | 字段             | 内容                                                         |
@@ -211,25 +213,3 @@ CodeHub API 的各资源路径追加在 `config.codehub.endpoint` 之后。
 | `assignee`          | object  | 指派人                             |
 | `proposer`          | object  | 提议人                             |
 | `resolved`          | boolean | 是否已解决                         |
-
----
-
-## 通用说明
-
-### 鉴权方式
-
-所有 CodeHub API（API #2 ~ #7）支持两种鉴权方式：
-
-1. **X-Auth-token**：通过 DevUC 授权（API #1）获取 `newToken`，在 Header 中携带 `X-Auth-token`
-2. **private-token**：使用 CodeHub 私有 token，在 Header 中携带 `private-token`
-
-所有请求需额外携带 Header：`X-Apig-AppCode`，其值来自
-`config.codehub.appCode`。
-
-### URL 参数说明
-
-| 参数                  | 说明                                              |
-| --------------------- | ------------------------------------------------- |
-| `<group_id>`          | Group 的 ID（数字）                               |
-| `<project_id>`        | Project 的 ID（数字）                             |
-| `<merge_request_iid>` | Merge Request 的项目内编号（数字，即 `iid` 字段） |
