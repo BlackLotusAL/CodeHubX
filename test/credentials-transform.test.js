@@ -4,7 +4,6 @@ import { AUTH_TYPES } from '../src/constants.js';
 import {
   KeyringCredentialStore,
   MemoryCredentialStore,
-  credentialSecrets,
   devucCredential,
   parseCredentialRecord,
   privateCredential,
@@ -42,7 +41,6 @@ test('private 与 DevUC 凭据使用稳定版本化记录', () => {
     issuedAtMs: 123,
   });
   assert.equal(devucValue.authentication_type, AUTH_TYPES.DEVUC);
-  assert.deepEqual(credentialSecrets(devucValue), ['Agent01', 'password', 'devuc-secret']);
   assert.deepEqual(parseCredentialRecord(serialiseCredentialRecord(devucValue)), devucValue);
 });
 

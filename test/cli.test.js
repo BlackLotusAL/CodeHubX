@@ -452,24 +452,26 @@ test('根命令或命令组本身返回单一 INVALID_ARGUMENT JSON', async () =
   }
 });
 
-test('服务端回显已知秘密与带凭据 URL 时输出层统一脱敏', async () => {
+test('服务端返回值和 SSH URL 用户名在 JSON 输出中保持不变', async () => {
   const { io, capture } = captureIo();
-  const malicious = {
+  const upstream = {
     ...repoApiFixture,
     path_with_namespace: 'prefix-private-secret-suffix',
     web_url: 'https://user:password@codehub.test/project',
-    ssh_url_to_repo: 'private-secret',
+    ssh_url_to_repo: 'ssh://git@codehub.test/platform/agent-tools.git',
   };
   const exit = await runCli(['repo', 'view', '9001'], {
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('private-secret')]]),
-    apiFactory: () => stubApi([], { viewProject: malicious }),
+    apiFactory: () => stubApi([], { viewProject: upstream }),
   });
   assert.equal(exit, 0);
-  assert.doesNotMatch(capture.stdout, /private-secret|user:password/);
-  assert.match(capture.stdout, /\[REDACTED\]/);
-  assert.equal(parseSingleJson(capture.stdout).web_url, 'https://codehub.test/project');
+  const result = parseSingleJson(capture.stdout);
+  assert.equal(result.full_name, 'prefix-private-secret-suffix');
+  assert.equal(result.web_url, 'https://user:password@codehub.test/project');
+  assert.equal(result.clone_urls.ssh, 'ssh://git@codehub.test/platform/agent-tools.git');
+  assert.doesNotMatch(capture.stdout, /\[REDACTED\]/);
 });
 
 function stubApi(calls, responses) {

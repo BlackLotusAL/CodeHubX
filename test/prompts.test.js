@@ -9,6 +9,10 @@ test('登录提示使用选择、掩码输入、自定义流和 AbortSignal', as
   const calls = [];
   const controller = new AbortController();
   const promptApi = {
+    input: async (options, context) => {
+      calls.push({ kind: 'input', options, context });
+      return 'Agent01';
+    },
     select: async (options, context) => {
       calls.push({ kind: 'select', options, context });
       return 'private_token';
@@ -36,17 +40,20 @@ test('登录提示使用选择、掩码输入、自定义流和 AbortSignal', as
   assert.equal(calls[0].context.clearPromptOnDone, true);
 });
 
-test('DevUC 账号与密码均掩码且提示层执行校验', async () => {
-  const options = [];
-  const answers = ['Agent01', 'password'];
+test('DevUC 账号明文保留、密码掩码清除且提示层执行校验', async () => {
+  const calls = [];
   const prompter = createInteractivePrompter({
     input: ttyInput,
     output: ttyOutput,
     promptApi: {
       select: async () => 'devuc',
-      password: async (config) => {
-        options.push(config);
-        return answers.shift();
+      input: async (options, context) => {
+        calls.push({ kind: 'input', options, context });
+        return 'Agent01';
+      },
+      password: async (options, context) => {
+        calls.push({ kind: 'password', options, context });
+        return 'password';
       },
     },
   });
@@ -54,11 +61,16 @@ test('DevUC 账号与密码均掩码且提示层执行校验', async () => {
     account: 'Agent01',
     password: 'password',
   });
-  assert.equal(options.every((value) => value.mask === true), true);
-  assert.equal(options[0].validate('Agent01'), true);
-  assert.equal(typeof options[0].validate('bad-name'), 'string');
-  assert.equal(options[1].validate('password'), true);
-  assert.equal(typeof options[1].validate(''), 'string');
+  assert.equal(calls[0].kind, 'input');
+  assert.equal('mask' in calls[0].options, false);
+  assert.equal(calls[0].context.clearPromptOnDone, false);
+  assert.equal(calls[0].options.validate('Agent01'), true);
+  assert.equal(typeof calls[0].options.validate('bad-name'), 'string');
+  assert.equal(calls[1].kind, 'password');
+  assert.equal(calls[1].options.mask, true);
+  assert.equal(calls[1].context.clearPromptOnDone, true);
+  assert.equal(calls[1].options.validate('password'), true);
+  assert.equal(typeof calls[1].options.validate(''), 'string');
 });
 
 test('非 TTY 在调用 Inquirer 前返回 INVALID_ARGUMENT', async () => {
@@ -67,12 +79,14 @@ test('非 TTY 在调用 Inquirer 前返回 INVALID_ARGUMENT', async () => {
     input: { isTTY: false },
     output: ttyOutput,
     promptApi: {
+      input: async () => { calls += 1; },
       select: async () => { calls += 1; },
       password: async () => { calls += 1; },
     },
   });
   await assert.rejects(prompter.chooseAuthenticationType(), { code: 'INVALID_ARGUMENT' });
   await assert.rejects(prompter.readPrivateToken(), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(prompter.readDevucCredentials(), { code: 'INVALID_ARGUMENT' });
   assert.equal(calls, 0);
 });
 

@@ -2,7 +2,6 @@ import { createApiClient } from './api.js';
 import { createConfigStore, requireCodehubConfig, requireDevucConfig } from './config.js';
 import {
   KeyringCredentialStore,
-  credentialSecrets,
   devucCredential,
   privateCredential,
 } from './credentials.js';
@@ -40,7 +39,6 @@ export async function runCli(argv, dependencies = {}) {
   const apiFactory = dependencies.apiFactory ?? createApiClient;
   const now = dependencies.now ?? Date.now;
   const signal = dependencies.signal;
-  const sensitiveValues = [];
   let executed = false;
   let selectedFormat = inferOutput(argv);
 
@@ -64,10 +62,8 @@ export async function runCli(argv, dependencies = {}) {
         fetchImpl: dependencies.fetchImpl,
         now,
         signal,
-        sensitiveValues,
       });
       writeSuccess(io, selectedFormat, command, data, {
-        sensitiveValues,
         now,
       });
     },
@@ -80,7 +76,7 @@ export async function runCli(argv, dependencies = {}) {
   } catch (error) {
     if (error?.code === 'commander.helpDisplayed') return 0;
     const cliError = toCliError(error);
-    writeFailure(io, selectedFormat, cliError, { sensitiveValues });
+    writeFailure(io, selectedFormat, cliError);
     return cliError.exitCode;
   }
 }
@@ -149,7 +145,6 @@ async function executeCommand(context) {
 async function login(context) {
   const rawConfig = await context.configStore.load();
   const codehub = requireCodehubConfig(rawConfig);
-  remember(context, codehub.appCode);
 
   const authenticationType = await context.prompter.chooseAuthenticationType({
     signal: context.signal,
@@ -157,7 +152,6 @@ async function login(context) {
 
   if (authenticationType === AUTH_TYPES.PRIVATE_TOKEN) {
     const token = await context.prompter.readPrivateToken({ signal: context.signal });
-    remember(context, token);
     const credential = privateCredential(token);
     await context.credentialStore.save(codehub.origin, credential);
     return loginResult(codehub.origin, authenticationType);
@@ -165,9 +159,7 @@ async function login(context) {
 
   if (authenticationType === AUTH_TYPES.DEVUC) {
     const devuc = requireDevucConfig(rawConfig);
-    remember(context, devuc.appCode);
     const values = await context.prompter.readDevucCredentials({ signal: context.signal });
-    remember(context, values.account, values.password);
     const api = context.apiFactory({
       devuc,
       timeoutMs: context.timeoutMs,
@@ -175,7 +167,6 @@ async function login(context) {
       signal: context.signal,
     });
     const token = await api.devucLogin(values.account, values.password);
-    remember(context, token);
     const credential = devucCredential({
       account: values.account,
       password: values.password,
@@ -192,7 +183,6 @@ async function login(context) {
 async function authStatus(context) {
   const codehub = await loadCodehub(context);
   const credential = await context.credentialStore.get(codehub.origin);
-  remember(context, ...credentialSecrets(credential));
   return {
     configured: Boolean(credential),
     authentication_type: credential?.authentication_type ?? null,
@@ -212,17 +202,14 @@ async function authLogout(context) {
 async function authenticatedApi(context) {
   const rawConfig = await context.configStore.load();
   const codehub = requireCodehubConfig(rawConfig);
-  remember(context, codehub.appCode);
   let credential = await context.credentialStore.get(codehub.origin);
   if (!credential) throw new CliError('AUTH_ERROR');
-  remember(context, ...credentialSecrets(credential));
 
   if (
     credential.authentication_type === AUTH_TYPES.DEVUC &&
     context.now() >= credential.issued_at_ms + DEVUC_VALIDITY_MS - DEVUC_REFRESH_LEEWAY_MS
   ) {
     const devuc = requireDevucConfig(rawConfig);
-    remember(context, devuc.appCode);
     const refreshApi = context.apiFactory({
       devuc,
       timeoutMs: context.timeoutMs,
@@ -230,7 +217,6 @@ async function authenticatedApi(context) {
       signal: context.signal,
     });
     const token = await refreshApi.devucLogin(credential.account, credential.password);
-    remember(context, token);
     credential = devucCredential({
       account: credential.account,
       password: credential.password,
@@ -254,9 +240,7 @@ async function authenticatedApi(context) {
 
 async function loadCodehub(context) {
   const rawConfig = await context.configStore.load();
-  const codehub = requireCodehubConfig(rawConfig);
-  remember(context, codehub.appCode);
-  return codehub;
+  return requireCodehubConfig(rawConfig);
 }
 
 function loginResult(origin, authenticationType) {
@@ -265,12 +249,6 @@ function loginResult(origin, authenticationType) {
     authentication_type: authenticationType,
     api_host: origin,
   };
-}
-
-function remember(context, ...values) {
-  for (const value of values) {
-    if (typeof value === 'string' && value.length > 0) context.sensitiveValues.push(value);
-  }
 }
 
 function inferOutput(argv) {

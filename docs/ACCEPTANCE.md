@@ -16,11 +16,10 @@ Windows 与 Ubuntu 的 Node.js 22 检查由 `.github/workflows/ci.yml` 执行。
 
 ## 本次本地验收结果
 
-验收日期：2026-08-12；本地平台：Windows。
+验收日期：2026-08-15；本地平台：Windows。
 
-- Node.js 24.14.1：78 项测试，77 通过、1 项按设计跳过（需显式启用的真实系统凭据测试），失败/取消为 0。
-- Node.js 22.20.0：同一完整套件 77 通过、1 项按设计跳过，失败/取消为 0。
-- 覆盖率：statements 99.13%、branches 94.62%、functions 96.68%、lines 99.13%。
+- Node.js 24.14.1：77 项测试，76 通过、1 项按设计跳过（需显式启用的真实系统凭据测试），失败/取消为 0。
+- 覆盖率：statements 99.1%、branches 94.51%、functions 96.57%、lines 99.1%。
 - Windows Credential Manager：一次性记录 save/get/delete 冒烟通过，测试记录已清理。
 - `npm pack`、临时安装和安装后 `codehub --help` 通过。
 - 生产依赖审计：0 个已知漏洞。
@@ -40,7 +39,7 @@ Ubuntu 的真实执行由已提交的 CI 矩阵负责；本机没有 Linux 执�
 | 7 | 成功结果逐命令定义且无通用信封/集中字段表 | 命令级直接 JSON 断言与字段白名单投影测试 | 通过 |
 | 8 | JSON 错误字段和错误码受限 | 全错误类别 stdout/stderr、退出码和字段集合测试 | 通过 |
 | 9 | human 颜色、宽度、时间、stderr | 中文/Emoji 对齐、窄终端、30 天边界、RFC 3339、颜色环境测试 | 通过 |
-| 10 | 敏感信息与跨 host Header 不泄漏 | canary secret、URL 凭据、ANSI、Header 清理和登录输出测试 | 通过 |
+| 10 | 原样业务输出、终端安全与跨 host Header 清理 | SSH URL 用户名、URL userinfo、控制字符、Header 清理和 DevUC 登录提示测试 | 通过 |
 
 ## 明确限制
 

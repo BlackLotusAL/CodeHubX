@@ -3,7 +3,6 @@ import test from 'node:test';
 import { CliError } from '../src/errors.js';
 import {
   renderHuman,
-  sanitiseForOutput,
   writeFailure,
   writeSuccess,
 } from '../src/output.js';
@@ -13,7 +12,7 @@ const repo = {
   repo_id: '9001',
   full_name: '平台/中文仓库🚀',
   clone_urls: {
-    ssh: 'git@code.test:platform/repository.git',
+    ssh: 'ssh://git@code.test/platform/repository.git',
     https: 'https://code.test/platform/repository.git',
   },
   archived: false,
@@ -85,7 +84,8 @@ test('repo human 输出对齐 SSH/HTTPS 并适配窄终端', () => {
   assert.match(lines[0], /^ID\s+仓库\s+更新时间/);
   const ssh = lines.find((line) => line.includes('SSH'));
   const https = lines.find((line) => line.includes('HTTPS'));
-  assert.equal(ssh.indexOf('git@'), https.indexOf('https://'));
+  assert.equal(ssh.indexOf('ssh://'), https.indexOf('https://'));
+  assert.match(ssh, /ssh:\/\/git@code\.test\/platform\/repository\.git/);
   assert.ok(lines.every((line) => line.length < 100));
 });
 
@@ -152,15 +152,24 @@ test('Commit human 显示父 SHA、作者、提交者和不同的完整消息', 
   assert.match(output, /body/);
 });
 
-test('所有字符串递归脱敏、移除 URL 凭据和终端控制符', () => {
-  const output = sanitiseForOutput({
+test('JSON 原样保留业务字段，同时转义实际终端控制字符', () => {
+  const data = {
     token: 'prefix secret suffix',
-    nested: ['https://user:password@code.test/path', 'hello\u001B[31mred\u001B[0m\u0001'],
-  }, ['secret']);
-  assert.deepEqual(output, {
-    token: 'prefix [REDACTED] suffix',
-    nested: ['https://code.test/path', 'hellored�'],
-  });
+    nested: [
+      'ssh://git@code.test/platform/repository.git',
+      'https://user:password@code.test/path',
+      'hello\u001B[31mred\u001B[0m\u0001\u009B31m',
+    ],
+  };
+  const { io, capture } = captureIo({ stdoutIsTTY: true });
+  writeSuccess(io, 'json', 'repo.view', data);
+  assert.deepEqual(parseSingleJson(capture.stdout), data);
+  assert.match(capture.stdout, /ssh:\/\/git@code\.test/);
+  assert.match(capture.stdout, /https:\/\/user:password@code\.test/);
+  assert.match(capture.stdout, /prefix secret suffix/);
+  assert.doesNotMatch(capture.stdout, /\u001B|\u009B/);
+  assert.match(capture.stdout, /\\u001b/);
+  assert.match(capture.stdout, /\\u009b/);
 });
 
 test('本地和认证 human 输出不泄漏配置字段', () => {

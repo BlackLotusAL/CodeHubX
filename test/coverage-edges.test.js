@@ -5,7 +5,7 @@ import { runCli } from '../src/cli.js';
 import { MemoryCredentialStore, privateCredential } from '../src/credentials.js';
 import { CliError, errorResult, humanErrorMessage, toCliError } from '../src/errors.js';
 import { requestJson } from '../src/http.js';
-import { renderHuman, sanitiseForOutput } from '../src/output.js';
+import { renderHuman } from '../src/output.js';
 import { createInteractivePrompter } from '../src/prompts.js';
 import {
   projectCommitList,
@@ -114,22 +114,6 @@ test('repo 列表跳过 null clone URL并处理未来与无效时间', () => {
   assert.match(output, /one\s+-/);
   assert.match(output, /two\s+刚刚/);
   assert.equal((output.match(/SSH/g) ?? []).length, 1);
-});
-
-test('输出净化覆盖普通 URL、非法 URL、非字符串和空 secret', () => {
-  assert.deepEqual(sanitiseForOutput({
-    good: 'https://code.test/path',
-    bad: 'https://%',
-    text: 'not-a-url',
-    number: 1,
-    nil: null,
-  }, ['', null]), {
-    good: 'https://code.test/path',
-    bad: 'https://%',
-    text: 'not-a-url',
-    number: 1,
-    nil: null,
-  });
 });
 
 test('错误转换覆盖已有错误、Commander、Abort 和未知异常', () => {
@@ -258,6 +242,7 @@ test('prompt 未知错误也转换为 CANCELLED', async () => {
     input: { isTTY: true },
     output: { isTTY: true },
     promptApi: {
+      input: async () => 'Agent01',
       select: async () => { throw new Error('unexpected'); },
       password: async () => 'x',
     },

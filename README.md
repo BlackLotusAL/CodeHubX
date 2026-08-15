@@ -66,7 +66,7 @@ codehub auth login
 可选择：
 
 - Private Token：本地校验后保存到系统凭据库。
-- DevUC：通过账号和密码换取 `newToken`；账号、密码、token 和签发时间保存在系统凭据库中，以便在 24 小时有效期结束前 5 分钟按需刷新。
+- DevUC：账号使用明文输入，回车后终端保留提示和当前账号以便确认；密码使用掩码输入。登录成功后，账号、密码、token 和签发时间保存在系统凭据库中，以便在 24 小时有效期结束前 5 分钟按需刷新。
 
 凭据不接受命令行或环境变量输入，也不会保存到配置文件。Linux 缺少可用 Secret Service 时认证命令返回 `AUTH_ERROR`，不会降级到明文文件。
 
@@ -121,9 +121,12 @@ codehub mr list --project-id 123 --output human
 
 human 输出按终端宽度处理中文、全角字符和 Emoji。`NO_COLOR`、`CLICOLOR=0`、`TERM=dumb` 或重定向会关闭颜色；`CLICOLOR_FORCE` 可强制颜色。
 
+成功结果不执行敏感字符串替换，也不移除 URL 中的用户名或密码。JSON 中的业务值与投影后的 API 返回值一致；human 输出仅过滤可能控制终端的 ANSI 和控制字符。API 提供方必须确保返回字段适合直接输出，并注意管道、重定向和 CI 日志可能持久化这些内容。
+
 ## 安全与写入语义
 
-- Private Token、DevUC 账号/密码/token 和 AppCode 不进入命令参数、URL、日志或输出。
+- Private Token 和 DevUC 密码在登录向导中使用掩码输入；DevUC 账号明文显示并保留在终端滚动记录中。
+- 认证秘密不接受命令参数或环境变量输入，CLI 自身生成的状态和错误结果不包含密码、token 或 AppCode。
 - CodeHub 的两个认证 Header 互斥发送。
 - GET 跨 origin 重定向会移除认证 Header、AppCode、Authorization 和 Cookie。
 - 所有 HTTP 请求均不自动重试。

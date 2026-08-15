@@ -6,6 +6,7 @@ const DEFAULT_COLUMNS = 100;
 const MIN_COLUMNS = 40;
 const MAX_COLUMNS = 240;
 const ANSI_PATTERN = /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+const JSON_TERMINAL_CONTROL_PATTERN = /[\u007F-\u009F]/g;
 
 export function createProcessIo({
   stdout = process.stdout,
@@ -23,26 +24,20 @@ export function createProcessIo({
 }
 
 export function writeSuccess(io, format, command, data, options = {}) {
-  const safeData = sanitiseForOutput(data, options.sensitiveValues);
   if (format === 'json') {
-    io.stdout(`${JSON.stringify(safeData, null, 2)}\n`);
+    io.stdout(`${serialiseJson(data)}\n`);
     return;
   }
-  io.stdout(`${renderHuman(command, safeData, { ...options, io })}\n`);
+  io.stdout(`${renderHuman(command, data, { ...options, io })}\n`);
 }
 
-export function writeFailure(io, format, error, options = {}) {
+export function writeFailure(io, format, error) {
   if (format === 'json') {
-    io.stderr(`${JSON.stringify(errorResult(error), null, 2)}\n`);
+    io.stderr(`${serialiseJson(errorResult(error))}\n`);
     return;
   }
   const colors = createColors(shouldUseColor(io.env, io.stderrIsTTY));
   io.stderr(`${colors.error(humanErrorMessage(error))}\n`);
-}
-
-export function sanitiseForOutput(value, sensitiveValues = []) {
-  const secrets = [...new Set((sensitiveValues ?? []).filter(validSecret))];
-  return sanitise(value, secrets);
 }
 
 export function renderHuman(command, data, { io, now = Date.now } = {}) {
@@ -270,39 +265,17 @@ function createColors(enabled) {
   };
 }
 
-function sanitise(value, secrets) {
-  if (Array.isArray(value)) return value.map((child) => sanitise(child, secrets));
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, sanitise(child, secrets)]));
-  }
-  if (typeof value !== 'string') return value;
-
-  let output = safeText(stripUrlCredentials(value));
-  for (const secret of secrets) output = output.replaceAll(secret, '[REDACTED]');
-  return output;
-}
-
-function stripUrlCredentials(value) {
-  if (!/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(value)) return value;
-  try {
-    const url = new URL(value);
-    if (!url.username && !url.password) return value;
-    url.username = '';
-    url.password = '';
-    return url.toString();
-  } catch {
-    return value;
-  }
+function serialiseJson(value) {
+  return JSON.stringify(value, null, 2).replace(
+    JSON_TERMINAL_CONTROL_PATTERN,
+    (character) => `\\u${character.codePointAt(0).toString(16).padStart(4, '0')}`,
+  );
 }
 
 function safeText(value) {
   return String(value ?? '')
     .replace(ANSI_PATTERN, '')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '�');
-}
-
-function validSecret(value) {
-  return typeof value === 'string' && value.length > 0;
 }
 
 function printable(value) {

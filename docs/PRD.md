@@ -92,7 +92,7 @@ codehub auth login
 - 登录必须在带 TTY 的终端中执行。
 - CLI 提供 Private Token 和 DevUC 两种认证方式。
 - Private Token 为空或包含换行符时在本地拒绝。
-- DevUC 登录依次输入账号和密码；账号必须由字母和数字组成。
+- DevUC 登录依次输入账号和密码；账号必须由字母和数字组成，使用明文输入，并在回车后保留提示和当前账号；密码使用掩码输入且完成后清除提示。
 - DevUC 登录调用授权接口并读取响应中的 result.newToken。
 - 授权响应缺少有效 newToken 时返回 AUTH_ERROR。
 - Ctrl+C 取消登录时返回 CANCELLED。
@@ -283,7 +283,10 @@ X-Auth-token: <newToken>
 ## 7. 安全要求
 
 - Private Token 和 DevUC 密码在登录向导中使用掩码输入。
-- 账号、密码、token 和 AppCode 不得进入命令参数、URL、日志或输出。
+- DevUC 账号使用明文输入，提交后保留提示和当前账号，因此账号会进入终端滚动记录。
+- 认证秘密不得通过命令参数或环境变量输入；CLI 自身生成的状态和错误结果不得包含密码、token 或 AppCode。
+- CLI 不对成功结果执行敏感字符串替换或 URL userinfo 移除；API 提供方负责确保返回字段适合直接输出，调用方负责保护管道、重定向和 CI 日志。
+- Human 输出过滤 ANSI 和终端控制字符；JSON 对终端控制字符使用无损 Unicode 转义，解析后的业务值不得改变。
 - 认证和刷新所需凭据只持久化在 Credential Helper 中。
 - 跨 host 重定向必须移除认证 Header。
 
@@ -298,4 +301,4 @@ X-Auth-token: <newToken>
 7. 每个本地命令和业务命令旁只定义一次 JSON 成功结果类型与字段，不保留集中字段表或通用成功示例。
 8. JSON 错误只使用规定错误码及 code、message、可选 http_status。
 9. Human 成功输出正确处理颜色、ANSI、宽度和字符对齐；Human 错误只写 stderr，并包含稳定错误码。
-10. 命令参数、URL、日志、JSON 和 human 输出均不泄露账号、密码、token 或 AppCode，跨 host 请求不携带认证 Header。
+10. DevUC 账号明文显示并在提交后保留；成功输出保持投影后的 API 业务值及 URL userinfo 不变，同时阻止终端控制字符执行；跨 host 请求不携带认证 Header。

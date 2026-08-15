@@ -1,6 +1,6 @@
 import { openSync } from 'node:fs';
 import { WriteStream } from 'node:tty';
-import { password, select } from '@inquirer/prompts';
+import { input as textInput, password, select } from '@inquirer/prompts';
 import { AUTH_TYPES } from './constants.js';
 import { CliError } from './errors.js';
 import { devucAccount, devucPassword, privateToken } from './validation.js';
@@ -8,7 +8,7 @@ import { devucAccount, devucPassword, privateToken } from './validation.js';
 export function createInteractivePrompter({
   input = process.stdin,
   output,
-  promptApi = { password, select },
+  promptApi = { input: textInput, password, select },
 } = {}) {
   return {
     async chooseAuthenticationType({ signal } = {}) {
@@ -56,14 +56,12 @@ export function createInteractivePrompter({
         const terminal = output ? { stream: output } : openTerminalOutput();
         assertInteractive(input, terminal.stream);
         try {
-          const context = promptContext(input, terminal.stream, signal);
-          const account = await promptApi.password(
+          const account = await promptApi.input(
             {
               message: '请输入 DevUC 账号',
-              mask: true,
               validate: (value) => validatePrompt(value, devucAccount, '账号只能包含字母和数字'),
             },
-            context,
+            promptContext(input, terminal.stream, signal, false),
           );
           const value = await promptApi.password(
             {
@@ -71,7 +69,7 @@ export function createInteractivePrompter({
               mask: true,
               validate: (candidate) => validatePrompt(candidate, devucPassword, '密码不能为空或包含换行符'),
             },
-            context,
+            promptContext(input, terminal.stream, signal),
           );
           return { account, password: value };
         } finally {
@@ -82,8 +80,8 @@ export function createInteractivePrompter({
   };
 }
 
-function promptContext(input, output, signal) {
-  return { input, output, signal, clearPromptOnDone: true };
+function promptContext(input, output, signal, clearPromptOnDone = true) {
+  return { input, output, signal, clearPromptOnDone };
 }
 
 function assertInteractive(input, output) {

@@ -80,13 +80,6 @@ export function devucCredential({ account, password, token, issuedAtMs }) {
   });
 }
 
-export function credentialSecrets(credential) {
-  if (!credential) return [];
-  return [credential.account, credential.password, credential.token].filter(
-    (value) => typeof value === 'string' && value.length > 0,
-  );
-}
-
 export function serialiseCredentialRecord(credential) {
   return JSON.stringify(validateCredential(credential));
 }
