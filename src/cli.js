@@ -1,9 +1,10 @@
-import { createApiClient } from './api.js';
 import { createAuthenticationSession } from './authentication.js';
+import { createCodehubAdapter } from './codehub-adapter.js';
 import { createCodehubOperations } from './codehub-operations.js';
 import { createConfigStore } from './config.js';
 import { KeyringCredentialStore } from './credentials.js';
 import { CliError, toCliError } from './errors.js';
+import { createDevucClient } from './devuc-client.js';
 import {
   createActivity,
   createProcessIo,
@@ -26,7 +27,8 @@ export async function runCli(argv, dependencies = {}) {
   const configStore = dependencies.configStore ?? createConfigStore();
   const credentialStore = dependencies.credentialStore ?? new KeyringCredentialStore();
   const prompter = dependencies.prompter ?? createInteractivePrompter();
-  const apiFactory = dependencies.apiFactory ?? createApiClient;
+  const devucClientFactory = dependencies.devucClientFactory ?? createDevucClient;
+  const codehubAdapterFactory = dependencies.codehubAdapterFactory ?? createCodehubAdapter;
   const operationsFactory = dependencies.operationsFactory ?? createCodehubOperations;
   const authenticationFactory = dependencies.authenticationFactory ?? createAuthenticationSession;
   const activityFactory = dependencies.activityFactory ?? createActivity;
@@ -53,10 +55,10 @@ export async function runCli(argv, dependencies = {}) {
         configStore,
         credentialStore,
         prompter,
-        clientFactory: (options) => {
-          const adapter = apiFactory(options);
-          return options.codehub ? operationsFactory(adapter) : adapter;
-        },
+        devucClientFactory,
+        codehubOperationsFactory: (options) => operationsFactory(
+          codehubAdapterFactory(options),
+        ),
         timeoutMs,
         fetchImpl: dependencies.fetchImpl,
         now,
@@ -99,30 +101,30 @@ async function executeCommand(context) {
       return context.authentication.logout();
     case 'repo.list': {
       const groupId = positiveId(context.positionals[0]);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.projects.list(groupId);
     }
     case 'repo.view': {
       const projectId = positiveId(context.positionals[0]);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.projects.view(projectId);
     }
     case 'mr.list': {
       const projectId = positiveId(context.options.projectId);
       const state = mergeRequestState(context.options.state);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.mergeRequests.list({ projectId, state });
     }
     case 'mr.view': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.mergeRequests.view({ projectId, iid });
     }
     case 'mr.commits': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.mergeRequests.commits({ projectId, iid });
     }
     case 'mr.comment.create': {
@@ -130,7 +132,7 @@ async function executeCommand(context) {
       const iid = positiveId(context.positionals[0]);
       const body = commentBody(context.options.body);
       const selectedSeverity = severity(context.options.severity);
-      const { client: operations } = await context.authentication.codehub();
+      const operations = await context.authentication.codehub();
       return operations.mergeRequests.createComment({
         projectId,
         iid,

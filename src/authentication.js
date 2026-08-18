@@ -11,7 +11,8 @@ export function createAuthenticationSession({
   configStore,
   credentialStore,
   prompter,
-  clientFactory,
+  devucClientFactory,
+  codehubOperationsFactory,
   timeoutMs,
   fetchImpl,
   now = Date.now,
@@ -38,7 +39,7 @@ export function createAuthenticationSession({
     if (authenticationType === AUTH_TYPES.DEVUC) {
       const devucConfig = requireDevucConfig(rawConfig);
       const values = await prompter.readDevucCredentials({ signal });
-      const token = await createDevucClient(devucConfig).devucLogin(
+      const token = await createConfiguredDevucClient(devucConfig).login(
         values.account,
         values.password,
       );
@@ -81,7 +82,7 @@ export function createAuthenticationSession({
 
     if (shouldRefresh(credential)) {
       const devucConfig = requireDevucConfig(rawConfig);
-      const token = await createDevucClient(devucConfig).devucLogin(
+      const token = await createConfiguredDevucClient(devucConfig).login(
         credential.account,
         credential.password,
       );
@@ -94,15 +95,13 @@ export function createAuthenticationSession({
       await credentialStore.save(codehubConfig.origin, credential);
     }
 
-    return {
-      client: clientFactory({
-        codehub: codehubConfig,
-        credential,
-        timeoutMs,
-        fetchImpl,
-        signal,
-      }),
-    };
+    return codehubOperationsFactory({
+      codehub: codehubConfig,
+      credential,
+      timeoutMs,
+      fetchImpl,
+      signal,
+    });
   }
 
   function shouldRefresh(credential) {
@@ -112,8 +111,8 @@ export function createAuthenticationSession({
     );
   }
 
-  function createDevucClient(devuc) {
-    return clientFactory({
+  function createConfiguredDevucClient(devuc) {
+    return devucClientFactory({
       devuc,
       timeoutMs,
       fetchImpl,

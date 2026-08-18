@@ -25,7 +25,8 @@ test('认证会话通过一个 interface 完成登录、状态和幂等退出', 
       chooseAuthenticationType: async () => 'private_token',
       readPrivateToken: async () => 'private-secret',
     },
-    clientFactory: () => { networkCalls += 1; },
+    devucClientFactory: () => { networkCalls += 1; },
+    codehubOperationsFactory: () => { networkCalls += 1; },
   });
 
   assert.deepEqual(await session.login(), {
@@ -64,8 +65,8 @@ test('认证会话隐藏 DevUC 登录细节并保存刷新所需凭据', async (
       chooseAuthenticationType: async () => 'devuc',
       readDevucCredentials: async () => ({ account: 'Agent01', password: 'password-secret' }),
     },
-    clientFactory: (options) => ({
-      devucLogin: async (account, password) => {
+    devucClientFactory: (options) => ({
+      login: async (account, password) => {
         calls.push({ options, account, password });
         return 'new-token-secret';
       },
@@ -101,13 +102,13 @@ test('认证会话在刷新阈值前直接形成已认证 CodeHub 能力', async
     configStore: configStore(validConfig({ devuc: { endpoint: '', appCode: '' } })),
     credentialStore: store,
     now: () => issuedAt + DEVUC_VALIDITY_MS - DEVUC_REFRESH_LEEWAY_MS - 1,
-    clientFactory: (options) => {
+    codehubOperationsFactory: (options) => {
       contexts.push(options);
       return capability;
     },
   });
 
-  assert.deepEqual(await session.codehub(), { client: capability });
+  assert.equal(await session.codehub(), capability);
   assert.equal(contexts.length, 1);
   assert.equal(contexts[0].credential.token, 'old-token');
 });
@@ -133,19 +134,19 @@ test('认证会话在精确阈值先刷新并保存，再形成 CodeHub 能力',
     configStore: configStore(),
     credentialStore: store,
     now: () => boundary,
-    clientFactory: (options) => {
-      if (options.devuc) return {
-        devucLogin: async () => {
-          events.push('refresh');
-          return 'new-token';
-        },
-      };
+    devucClientFactory: () => ({
+      login: async () => {
+        events.push('refresh');
+        return 'new-token';
+      },
+    }),
+    codehubOperationsFactory: (options) => {
       events.push(`capability:${options.credential.token}`);
       return capability;
     },
   });
 
-  assert.deepEqual(await session.codehub(), { client: capability });
+  assert.equal(await session.codehub(), capability);
   assert.deepEqual(events, ['refresh', 'save:new-token', 'capability:new-token']);
   assert.equal((await store.get(ORIGIN)).issued_at_ms, boundary);
 });
@@ -155,7 +156,7 @@ test('认证会话在缺少凭据、刷新失败或保存失败时不形成 Code
   const emptySession = createAuthenticationSession({
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore(),
-    clientFactory: () => { capabilityCalls += 1; },
+    codehubOperationsFactory: () => { capabilityCalls += 1; },
   });
   await assert.rejects(emptySession.codehub(), { code: 'AUTH_ERROR' });
 
@@ -176,13 +177,13 @@ test('认证会话在缺少凭据、刷新失败或保存失败时不形成 Code
       configStore: configStore(),
       credentialStore: store,
       now: () => DEVUC_VALIDITY_MS,
-      clientFactory: (options) => {
-        if (options.devuc) return {
-          devucLogin: async () => {
-            if (mode === 'refresh') throw new CliError('AUTH_ERROR');
-            return 'new-token';
-          },
-        };
+      devucClientFactory: () => ({
+        login: async () => {
+          if (mode === 'refresh') throw new CliError('AUTH_ERROR');
+          return 'new-token';
+        },
+      }),
+      codehubOperationsFactory: () => {
         capabilityCalls += 1;
         return {};
       },

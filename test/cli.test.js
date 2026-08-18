@@ -26,7 +26,8 @@ test('config init 不加载配置、凭据或网络并默认输出 JSON', async 
       load: async () => { throw new Error('must not load'); },
     },
     credentialStore: failCredentialStore(),
-    apiFactory: () => { calls.push('network'); },
+    devucClientFactory: () => { calls.push('devuc'); },
+    codehubAdapterFactory: () => { calls.push('codehub'); },
   });
   assert.equal(exitCode, 0);
   assert.deepEqual(parseSingleJson(capture.stdout), {
@@ -48,7 +49,8 @@ test('private token 登录交互保存单一系统凭据记录', async () => {
       chooseAuthenticationType: async () => 'private_token',
       readPrivateToken: async () => 'private-secret',
     },
-    apiFactory: () => { throw new Error('must not access network'); },
+    devucClientFactory: () => { throw new Error('must not access DevUC'); },
+    codehubAdapterFactory: () => { throw new Error('must not access CodeHub'); },
   });
   assert.equal(exitCode, 0);
   assert.deepEqual(parseSingleJson(capture.stdout), {
@@ -63,7 +65,7 @@ test('private token 登录交互保存单一系统凭据记录', async () => {
 test('DevUC 登录请求 newToken 并保存账号、密码、token 和签发时间', async () => {
   const { io, capture } = captureIo();
   const store = new MemoryCredentialStore();
-  const apiCalls = [];
+  const devucCalls = [];
   const now = 1_765_000_000_000;
   const exitCode = await runCli(['auth', 'login', '--timeout', '2m'], {
     io,
@@ -74,16 +76,16 @@ test('DevUC 登录请求 newToken 并保存账号、密码、token 和签发时�
       chooseAuthenticationType: async () => 'devuc',
       readDevucCredentials: async () => ({ account: 'Agent01', password: 'password-secret' }),
     },
-    apiFactory: (options) => ({
-      devucLogin: async (account, password) => {
-        apiCalls.push({ options, account, password });
+    devucClientFactory: (options) => ({
+      login: async (account, password) => {
+        devucCalls.push({ options, account, password });
         return 'new-token-secret';
       },
     }),
   });
   assert.equal(exitCode, 0);
-  assert.equal(apiCalls[0].options.timeoutMs, 120_000);
-  assert.equal(apiCalls[0].options.devuc.endpoint, 'https://devuc.test/v2/w3tokens');
+  assert.equal(devucCalls[0].options.timeoutMs, 120_000);
+  assert.equal(devucCalls[0].options.devuc.endpoint, 'https://devuc.test/v2/w3tokens');
   assert.deepEqual(await store.get(ORIGIN), devucCredential({
     account: 'Agent01',
     password: 'password-secret',
@@ -138,7 +140,8 @@ test('auth status 只读取当前 origin 凭据，未登录字段为 null', asyn
       io,
       configStore: configStore(),
       credentialStore: store,
-      apiFactory: () => { networkCalls += 1; },
+      devucClientFactory: () => { networkCalls += 1; },
+      codehubAdapterFactory: () => { networkCalls += 1; },
     });
     assert.equal(exit, 0);
     assert.deepEqual(parseSingleJson(capture.stdout), {
@@ -164,7 +167,8 @@ test('auth logout 幂等清除完整记录且不访问网络', async () => {
       io,
       configStore: configStore(),
       credentialStore: store,
-      apiFactory: () => { throw new Error('must not call'); },
+      devucClientFactory: () => { throw new Error('must not access DevUC'); },
+      codehubAdapterFactory: () => { throw new Error('must not access CodeHub'); },
     });
     assert.equal(exit, 0);
     assert.deepEqual(parseSingleJson(capture.stdout), {
@@ -213,7 +217,7 @@ test('所有业务命令输出规定的直接 JSON 结构', async () => {
       io,
       configStore: configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => ({}),
+      codehubAdapterFactory: () => ({}),
       operationsFactory: () => operations,
     });
     assert.equal(exit, 0, argv.join(' '));
@@ -231,7 +235,7 @@ test('MR list 默认映射 opened，显式 all 原样传递', async () => {
       io,
       configStore: configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => ({}),
+      codehubAdapterFactory: () => ({}),
       operationsFactory: () => stubOperations(calls, { 'mergeRequests.list': [] }),
     });
     assert.equal(exit, 0);
@@ -249,7 +253,7 @@ test('评论正文和 severity 原样传递且空正文在网络前拒绝', asyn
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-    apiFactory: () => ({}),
+    codehubAdapterFactory: () => ({}),
     operationsFactory: () => stubOperations(calls, {
       'mergeRequests.createComment': { comment_id: 'discussion-1' },
     }),
@@ -262,32 +266,32 @@ test('评论正文和 severity 原样传递且空正文在网络前拒绝', asyn
   }]);
 
   const invalid = captureIo();
-  let apiCalls = 0;
+  let adapterCalls = 0;
   const exit = await runCli([
     'mr', 'comment', 'create', '17', '--project-id', '9001', '--body=',
   ], {
     io: invalid.io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-    apiFactory: () => { apiCalls += 1; },
+    codehubAdapterFactory: () => { adapterCalls += 1; },
   });
   assert.equal(exit, 2);
-  assert.equal(apiCalls, 0);
+  assert.equal(adapterCalls, 0);
 });
 
-test('缺少凭据时业务命令返回 AUTH_ERROR 且不创建 API client', async () => {
+test('缺少凭据时业务命令返回 AUTH_ERROR 且不创建 CodeHub adapter', async () => {
   const { io, capture } = captureIo();
-  let apiCalls = 0;
+  let adapterCalls = 0;
   const exit = await runCli(['repo', 'list', '1'], {
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore(),
-    apiFactory: () => { apiCalls += 1; },
+    codehubAdapterFactory: () => { adapterCalls += 1; },
   });
   assert.equal(exit, 3);
   assert.equal(capture.stdout, '');
   assert.equal(parseSingleJson(capture.stderr).code, 'AUTH_ERROR');
-  assert.equal(apiCalls, 0);
+  assert.equal(adapterCalls, 0);
 });
 
 test('参数、配置、HTTP、网络和写入未知错误保持 stdout/stderr 与退出码契约', async () => {
@@ -313,7 +317,7 @@ test('参数、配置、HTTP、网络和写入未知错误保持 stdout/stderr �
       io,
       configStore: overrides.configStore ?? configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => ({}),
+      codehubAdapterFactory: () => ({}),
       operationsFactory: () => failingOperations(overrides.apiError),
     });
     assert.equal(exit, expectedExit, argv.join(' '));
@@ -371,7 +375,7 @@ test('领域操作返回值和 SSH URL 用户名在 JSON 输出中保持不变',
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('private-secret')]]),
-    apiFactory: () => ({}),
+    codehubAdapterFactory: () => ({}),
     operationsFactory: () => stubOperations([], { 'projects.view': resultFromOperations }),
   });
   assert.equal(exit, 0);

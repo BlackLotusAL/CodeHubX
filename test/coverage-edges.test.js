@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createApiClient } from '../src/api.js';
+import { createCodehubAdapter } from '../src/codehub-adapter.js';
 import { runCli } from '../src/cli.js';
 import { MemoryCredentialStore, privateCredential } from '../src/credentials.js';
+import { createDevucClient } from '../src/devuc-client.js';
 import { CliError, errorResult, humanErrorMessage, toCliError } from '../src/errors.js';
 import { requestJson } from '../src/http.js';
 import { renderHuman } from '../src/output.js';
@@ -175,13 +176,13 @@ test('评论 timeout 即使携带发送前错误码也保守标记结果未知',
   }), { code: 'WRITE_RESULT_UNKNOWN' });
 });
 
-test('API 防御缺少配置、未知凭据类型与 DevUC 取消', async () => {
+test('外部 adapter 防御缺少配置、未知凭据类型与 DevUC 取消', async () => {
   await assert.rejects(
-    createApiClient({ timeoutMs: 100 }).devucLogin('a', 'b'),
+    createDevucClient({ timeoutMs: 100 }).login('a', 'b'),
     { code: 'CONFIG_ERROR' },
   );
   const controller = new AbortController();
-  const cancelled = createApiClient({
+  const cancelled = createDevucClient({
     devuc: { endpoint: 'https://devuc.test', appCode: 'x' },
     timeoutMs: 100,
     signal: controller.signal,
@@ -189,14 +190,14 @@ test('API 防御缺少配置、未知凭据类型与 DevUC 取消', async () => 
       signal.addEventListener('abort', () => reject(Object.assign(new Error('abort'), { name: 'AbortError' })), { once: true });
     }),
   });
-  const cancelledRequest = cancelled.devucLogin('a', 'b');
+  const cancelledRequest = cancelled.login('a', 'b');
   controller.abort();
   await assert.rejects(
     cancelledRequest,
     { code: 'CANCELLED' },
   );
   assert.throws(
-    () => createApiClient({
+    () => createCodehubAdapter({
       codehub: { endpoint: 'https://code.test', appCode: 'x' },
       credential: { authentication_type: 'unknown', token: 'x' },
       timeoutMs: 100,

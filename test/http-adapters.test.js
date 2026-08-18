@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createApiClient } from '../src/api.js';
+import { createCodehubAdapter } from '../src/codehub-adapter.js';
+import { createDevucClient } from '../src/devuc-client.js';
 import { requestJson, stripSensitiveHeaders } from '../src/http.js';
 import { devucCredential, privateCredential } from '../src/credentials.js';
 import { commentApiFixture, commitApiFixture, mergeRequestApiFixture, repoApiFixture } from '../test-support/fixtures.js';
@@ -17,7 +18,7 @@ const devuc = {
   origin: 'https://devuc.test',
 };
 
-test('七组 API 使用准确 method、URL、query、Header 与 body', async () => {
+test('六组 CodeHub adapter 操作使用准确 method、URL、query、Header 与 body', async () => {
   const calls = [];
   const responses = [
     [repoApiFixture],
@@ -31,19 +32,19 @@ test('七组 API 使用准确 method、URL、query、Header 与 body', async () 
     calls.push({ url: String(url), options });
     return jsonResponse(200, responses.shift());
   };
-  const api = createApiClient({
+  const adapter = createCodehubAdapter({
     codehub,
     credential: privateCredential('private-secret'),
     timeoutMs: 1_000,
     fetchImpl,
   });
 
-  await api.listProjects('12');
-  await api.viewProject('34');
-  await api.listMergeRequests('34', 'opened');
-  await api.viewMergeRequest('34', '7');
-  await api.listMergeRequestCommits('34', '7');
-  await api.createMergeRequestComment('34', '7', '原样正文\n$()', 'major');
+  await adapter.listProjects('12');
+  await adapter.viewProject('34');
+  await adapter.listMergeRequests('34', 'opened');
+  await adapter.viewMergeRequest('34', '7');
+  await adapter.listMergeRequestCommits('34', '7');
+  await adapter.createMergeRequestComment('34', '7', '原样正文\n$()', 'major');
 
   assert.deepEqual(calls.map((call) => call.url), [
     'https://codehub.test/api/v4/groups/12/projects',
@@ -71,7 +72,7 @@ test('七组 API 使用准确 method、URL、query、Header 与 body', async () 
   assert.equal(comment.options.body, JSON.stringify({ body: '原样正文\n$()', severity: 'major' }));
 });
 
-test('DevUC API 与 X-Auth-token 鉴权准确且绝不同时发送 private-token', async () => {
+test('DevUC client 与 CodeHub adapter 鉴权准确且绝不同时发送 private-token', async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url: String(url), options });
@@ -85,11 +86,11 @@ test('DevUC API 与 X-Auth-token 鉴权准确且绝不同时发送 private-token
     token: 'old-token',
     issuedAtMs: 0,
   });
-  const authApi = createApiClient({ devuc, timeoutMs: 1_000, fetchImpl });
-  assert.equal(await authApi.devucLogin('Agent1', 'password'), 'new-token');
+  const devucClient = createDevucClient({ devuc, timeoutMs: 1_000, fetchImpl });
+  assert.equal(await devucClient.login('Agent1', 'password'), 'new-token');
 
-  const businessApi = createApiClient({ codehub, credential, timeoutMs: 1_000, fetchImpl });
-  await businessApi.listProjects('1');
+  const codehubAdapter = createCodehubAdapter({ codehub, credential, timeoutMs: 1_000, fetchImpl });
+  await codehubAdapter.listProjects('1');
   assert.deepEqual(calls[0].options.headers, {
     'X-Apig-AppCode': 'devuc-app',
     'Content-Type': 'application/json',
@@ -108,8 +109,8 @@ test('DevUC 缺少 newToken、HTTP 或网络失败统一返回 AUTH_ERROR', asyn
     async () => jsonResponse(403, { error: true }),
     async () => { throw Object.assign(new Error('offline'), { code: 'ENOTFOUND' }); },
   ]) {
-    const api = createApiClient({ devuc, timeoutMs: 1_000, fetchImpl });
-    await assert.rejects(api.devucLogin('Agent1', 'password'), { code: 'AUTH_ERROR' });
+    const client = createDevucClient({ devuc, timeoutMs: 1_000, fetchImpl });
+    await assert.rejects(client.login('Agent1', 'password'), { code: 'AUTH_ERROR' });
   }
 });
 

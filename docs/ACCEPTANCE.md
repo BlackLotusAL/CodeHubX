@@ -38,7 +38,7 @@ Ubuntu 的真实执行由已提交的 CI 矩阵负责；本机没有 Linux 执�
 
 | # | 验收要求 | 自动化证据 | 结果 |
 | --- | --- | --- | --- |
-| 1 | 七组 API 的 Method、URL、query、Header、body 一致 | `test/http-api.test.js` 的七组 API 请求捕获测试 | 通过 |
+| 1 | 六组 CodeHub adapter 操作及 DevUC client 的 Method、URL、query、Header、body 一致 | `test/http-adapters.test.js` 的外部请求捕获测试 | 通过 |
 | 2 | `--project-id` 与 ID/state/body/severity 校验 | `test/validation-config.test.js`、`test/cli.test.js` | 通过 |
 | 3 | 配置加载只检查 JSON 语法，配置失败统一分类 | 配置根类型、BOM、延迟校验、I/O 与损坏文件测试 | 通过 |
 | 4 | 两种登录、状态、退出和 Credential Helper | `test/cli.test.js`、`test/credentials-transform.test.js`、系统凭据冒烟 | 通过 |
