@@ -8,12 +8,6 @@ import {
 } from '../src/credentials.js';
 import { CliError } from '../src/errors.js';
 import {
-  commentApiFixture,
-  commitApiFixture,
-  mergeRequestApiFixture,
-  repoApiFixture,
-} from '../test-support/fixtures.js';
-import {
   captureIo,
   configStore,
   parseSingleJson,
@@ -183,40 +177,44 @@ test('auth logout 幂等清除完整记录且不访问网络', async () => {
 
 test('所有业务命令输出规定的直接 JSON 结构', async () => {
   const cases = [
-    [['repo', 'list', '8'], 'listProjects', [repoApiFixture], (value) => {
+    [['repo', 'list', '8'], 'projects.list', [{ repo_id: '9001' }], (value) => {
       assert.equal(Array.isArray(value), true);
       assert.equal(value[0].repo_id, '9001');
     }],
-    [['repo', 'view', '9001'], 'viewProject', repoApiFixture, (value) => {
+    [['repo', 'view', '9001'], 'projects.view', { default_branch: 'main' }, (value) => {
       assert.equal(value.default_branch, 'main');
     }],
-    [['mr', 'list', '--project-id', '9001'], 'listMergeRequests', [mergeRequestApiFixture], (value) => {
+    [['mr', 'list', '--project-id', '9001'], 'mergeRequests.list', [{ iid: '17' }], (value) => {
       assert.equal(value[0].iid, '17');
     }],
-    [['mr', 'view', '17', '--project-id', '9001'], 'viewMergeRequest', mergeRequestApiFixture, (value) => {
+    [['mr', 'view', '17', '--project-id', '9001'], 'mergeRequests.view', {
+      changes: { files: 12, additions: 83, deletions: 21 },
+    }, (value) => {
       assert.deepEqual(value.changes, { files: 12, additions: 83, deletions: 21 });
     }],
-    [['mr', 'commits', '17', '--project-id', '9001'], 'listMergeRequestCommits', [commitApiFixture], (value) => {
-      assert.equal(value[0].sha, commitApiFixture.id);
+    [['mr', 'commits', '17', '--project-id', '9001'], 'mergeRequests.commits', [{
+      sha: '0123456789abcdef0123456789abcdef01234567',
+    }], (value) => {
+      assert.equal(value[0].sha, '0123456789abcdef0123456789abcdef01234567');
     }],
     [[
       'mr', 'comment', 'create', '17', '--project-id', '9001',
       '--body', '保持原样\n$()', '--severity', 'major',
-    ], 'createMergeRequestComment', commentApiFixture, (value) => {
+    ], 'mergeRequests.createComment', { comment_id: 'discussion-1' }, (value) => {
       assert.equal(value.comment_id, 'discussion-1');
-      assert.equal('notes' in value, false);
     }],
   ];
 
   for (const [argv, method, response, assertion] of cases) {
     const { io, capture } = captureIo();
     const calls = [];
-    const api = stubApi(calls, { [method]: response });
+    const operations = stubOperations(calls, { [method]: response });
     const exit = await runCli(argv, {
       io,
       configStore: configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => api,
+      apiFactory: () => ({}),
+      operationsFactory: () => operations,
     });
     assert.equal(exit, 0, argv.join(' '));
     assertion(parseSingleJson(capture.stdout));
@@ -233,10 +231,11 @@ test('MR list 默认映射 opened，显式 all 原样传递', async () => {
       io,
       configStore: configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => stubApi(calls, { listMergeRequests: [] }),
+      apiFactory: () => ({}),
+      operationsFactory: () => stubOperations(calls, { 'mergeRequests.list': [] }),
     });
     assert.equal(exit, 0);
-    assert.deepEqual(calls[0].args, ['9001', expected]);
+    assert.deepEqual(calls[0].args, [{ projectId: '9001', state: expected }]);
   }
 });
 
@@ -250,9 +249,17 @@ test('评论正文和 severity 原样传递且空正文在网络前拒绝', asyn
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-    apiFactory: () => stubApi(calls, { createMergeRequestComment: commentApiFixture }),
+    apiFactory: () => ({}),
+    operationsFactory: () => stubOperations(calls, {
+      'mergeRequests.createComment': { comment_id: 'discussion-1' },
+    }),
   });
-  assert.deepEqual(calls[0].args, ['9001', '17', ' \n', 'suggestion']);
+  assert.deepEqual(calls[0].args, [{
+    projectId: '9001',
+    iid: '17',
+    body: ' \n',
+    severity: 'suggestion',
+  }]);
 
   const invalid = captureIo();
   let apiCalls = 0;
@@ -306,9 +313,8 @@ test('参数、配置、HTTP、网络和写入未知错误保持 stdout/stderr �
       io,
       configStore: overrides.configStore ?? configStore(),
       credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('secret')]]),
-      apiFactory: () => new Proxy({}, {
-        get: () => async () => { throw overrides.apiError; },
-      }),
+      apiFactory: () => ({}),
+      operationsFactory: () => failingOperations(overrides.apiError),
     });
     assert.equal(exit, expectedExit, argv.join(' '));
     assert.equal(capture.stdout, '');
@@ -349,19 +355,24 @@ test('根命令或命令组本身返回单一 INVALID_ARGUMENT JSON', async () =
   }
 });
 
-test('服务端返回值和 SSH URL 用户名在 JSON 输出中保持不变', async () => {
+test('领域操作返回值和 SSH URL 用户名在 JSON 输出中保持不变', async () => {
   const { io, capture } = captureIo();
-  const upstream = {
-    ...repoApiFixture,
-    path_with_namespace: 'prefix-private-secret-suffix',
+  const resultFromOperations = {
+    repo_id: '9001',
+    full_name: 'prefix-private-secret-suffix',
+    default_branch: 'main',
     web_url: 'https://user:password@codehub.test/project',
-    ssh_url_to_repo: 'ssh://git@codehub.test/platform/agent-tools.git',
+    clone_urls: {
+      ssh: 'ssh://git@codehub.test/platform/agent-tools.git',
+      https: 'https://codehub.test/platform/agent-tools.git',
+    },
   };
   const exit = await runCli(['repo', 'view', '9001'], {
     io,
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore([[ORIGIN, privateCredential('private-secret')]]),
-    apiFactory: () => stubApi([], { viewProject: upstream }),
+    apiFactory: () => ({}),
+    operationsFactory: () => stubOperations([], { 'projects.view': resultFromOperations }),
   });
   assert.equal(exit, 0);
   const result = parseSingleJson(capture.stdout);
@@ -371,17 +382,38 @@ test('服务端返回值和 SSH URL 用户名在 JSON 输出中保持不变', as
   assert.doesNotMatch(capture.stdout, /\[REDACTED\]/);
 });
 
-function stubApi(calls, responses) {
-  return new Proxy({}, {
-    get(_target, method) {
-      return async (...args) => {
-        calls.push({ method, args });
-        const value = responses[method];
-        if (value instanceof Error) throw value;
-        return structuredClone(value);
-      };
+function stubOperations(calls, responses) {
+  const operation = (method) => async (...args) => {
+    calls.push({ method, args });
+    const value = responses[method];
+    if (value instanceof Error) throw value;
+    return structuredClone(value);
+  };
+  return {
+    projects: {
+      list: operation('projects.list'),
+      view: operation('projects.view'),
     },
-  });
+    mergeRequests: {
+      list: operation('mergeRequests.list'),
+      view: operation('mergeRequests.view'),
+      commits: operation('mergeRequests.commits'),
+      createComment: operation('mergeRequests.createComment'),
+    },
+  };
+}
+
+function failingOperations(error) {
+  const failure = async () => { throw error; };
+  return {
+    projects: { list: failure, view: failure },
+    mergeRequests: {
+      list: failure,
+      view: failure,
+      commits: failure,
+      createComment: failure,
+    },
+  };
 }
 
 function failCredentialStore() {

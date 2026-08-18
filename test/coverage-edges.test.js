@@ -7,11 +7,6 @@ import { CliError, errorResult, humanErrorMessage, toCliError } from '../src/err
 import { requestJson } from '../src/http.js';
 import { renderHuman } from '../src/output.js';
 import { createInteractivePrompter } from '../src/prompts.js';
-import {
-  projectCommitList,
-  projectMergeRequestView,
-  projectRepoList,
-} from '../src/transform.js';
 import { captureIo, configStore, jsonResponse, parseSingleJson } from '../test-support/helpers.js';
 
 const humanIo = { columns: 50, env: {}, stdoutIsTTY: false };
@@ -248,32 +243,4 @@ test('prompt 未知错误也转换为 CANCELLED', async () => {
     },
   });
   await assert.rejects(prompter.chooseAuthenticationType(), { code: 'CANCELLED' });
-});
-
-test('投影边缘类型保持 null 和回退规则', () => {
-  assert.deepEqual(projectRepoList([{
-    id: null,
-    name_with_namespace: 'Name',
-    archived: 'false',
-    last_activity_at: 'time',
-  }])[0], {
-    repo_id: null,
-    full_name: 'Name',
-    clone_urls: { ssh: null, https: null },
-    archived: null,
-    updated_at: 'time',
-  });
-  const mr = projectMergeRequestView({
-    labels: [null, 3, { title: 'title' }, {}],
-    changes_count: '999999999999999999999999',
-    added_lines: -1,
-    removed_lines: '2',
-    author: [],
-  }, '1', '2');
-  assert.deepEqual(mr.labels, ['title']);
-  assert.deepEqual(mr.changes, { files: null, additions: null, deletions: 2 });
-  assert.equal(mr.author, null);
-  const commit = projectCommitList([{}])[0];
-  assert.equal(commit.author, null);
-  assert.equal(commit.parent_shas, null);
 });

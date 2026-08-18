@@ -1,5 +1,6 @@
 import { createApiClient } from './api.js';
 import { createAuthenticationSession } from './authentication.js';
+import { createCodehubOperations } from './codehub-operations.js';
 import { createConfigStore } from './config.js';
 import { KeyringCredentialStore } from './credentials.js';
 import { CliError, toCliError } from './errors.js';
@@ -11,14 +12,6 @@ import {
 } from './output.js';
 import { createInteractivePrompter } from './prompts.js';
 import { createProgram } from './program.js';
-import {
-  projectCommentResult,
-  projectCommitList,
-  projectMergeRequestList,
-  projectMergeRequestView,
-  projectRepoList,
-  projectRepoView,
-} from './transform.js';
 import {
   commentBody,
   mergeRequestState,
@@ -34,6 +27,7 @@ export async function runCli(argv, dependencies = {}) {
   const credentialStore = dependencies.credentialStore ?? new KeyringCredentialStore();
   const prompter = dependencies.prompter ?? createInteractivePrompter();
   const apiFactory = dependencies.apiFactory ?? createApiClient;
+  const operationsFactory = dependencies.operationsFactory ?? createCodehubOperations;
   const authenticationFactory = dependencies.authenticationFactory ?? createAuthenticationSession;
   const activityFactory = dependencies.activityFactory ?? createActivity;
   const now = dependencies.now ?? Date.now;
@@ -59,7 +53,10 @@ export async function runCli(argv, dependencies = {}) {
         configStore,
         credentialStore,
         prompter,
-        clientFactory: apiFactory,
+        clientFactory: (options) => {
+          const adapter = apiFactory(options);
+          return options.codehub ? operationsFactory(adapter) : adapter;
+        },
         timeoutMs,
         fetchImpl: dependencies.fetchImpl,
         now,
@@ -102,47 +99,42 @@ async function executeCommand(context) {
       return context.authentication.logout();
     case 'repo.list': {
       const groupId = positiveId(context.positionals[0]);
-      const { client: api } = await context.authentication.codehub();
-      return projectRepoList(await api.listProjects(groupId));
+      const { client: operations } = await context.authentication.codehub();
+      return operations.projects.list(groupId);
     }
     case 'repo.view': {
       const projectId = positiveId(context.positionals[0]);
-      const { client: api } = await context.authentication.codehub();
-      return projectRepoView(await api.viewProject(projectId), projectId);
+      const { client: operations } = await context.authentication.codehub();
+      return operations.projects.view(projectId);
     }
     case 'mr.list': {
       const projectId = positiveId(context.options.projectId);
       const state = mergeRequestState(context.options.state);
-      const { client: api } = await context.authentication.codehub();
-      return projectMergeRequestList(await api.listMergeRequests(projectId, state), projectId);
+      const { client: operations } = await context.authentication.codehub();
+      return operations.mergeRequests.list({ projectId, state });
     }
     case 'mr.view': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { client: api } = await context.authentication.codehub();
-      return projectMergeRequestView(await api.viewMergeRequest(projectId, iid), projectId, iid);
+      const { client: operations } = await context.authentication.codehub();
+      return operations.mergeRequests.view({ projectId, iid });
     }
     case 'mr.commits': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { client: api } = await context.authentication.codehub();
-      return projectCommitList(await api.listMergeRequestCommits(projectId, iid));
+      const { client: operations } = await context.authentication.codehub();
+      return operations.mergeRequests.commits({ projectId, iid });
     }
     case 'mr.comment.create': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
       const body = commentBody(context.options.body);
       const selectedSeverity = severity(context.options.severity);
-      const { client: api } = await context.authentication.codehub();
-      const response = await api.createMergeRequestComment(
+      const { client: operations } = await context.authentication.codehub();
+      return operations.mergeRequests.createComment({
         projectId,
         iid,
         body,
-        selectedSeverity,
-      );
-      return projectCommentResult(response, {
-        repoId: projectId,
-        mrIid: iid,
         severity: selectedSeverity,
       });
     }

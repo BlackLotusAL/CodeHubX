@@ -1,8 +1,38 @@
-export function projectRepoList(projects) {
+export function createCodehubOperations(adapter) {
+  return Object.freeze({
+    projects: Object.freeze({
+      list: async (groupId) => projectRepoList(await adapter.listProjects(groupId)),
+      view: async (projectId) => projectRepoView(
+        await adapter.viewProject(projectId),
+        projectId,
+      ),
+    }),
+    mergeRequests: Object.freeze({
+      list: async ({ projectId, state }) => projectMergeRequestList(
+        await adapter.listMergeRequests(projectId, state),
+        projectId,
+      ),
+      view: async ({ projectId, iid }) => projectMergeRequestView(
+        await adapter.viewMergeRequest(projectId, iid),
+        projectId,
+        iid,
+      ),
+      commits: async ({ projectId, iid }) => projectCommitList(
+        await adapter.listMergeRequestCommits(projectId, iid),
+      ),
+      createComment: async ({ projectId, iid, body, severity }) => projectCommentResult(
+        await adapter.createMergeRequestComment(projectId, iid, body, severity),
+        { repoId: projectId, mrIid: iid, severity },
+      ),
+    }),
+  });
+}
+
+function projectRepoList(projects) {
   return projects.map((project) => projectRepoSummary(project));
 }
 
-export function projectRepoView(project, repoId = null) {
+function projectRepoView(project, repoId = null) {
   return {
     ...projectRepoSummary(project, repoId),
     default_branch: textOrNull(project?.default_branch),
@@ -10,11 +40,11 @@ export function projectRepoView(project, repoId = null) {
   };
 }
 
-export function projectMergeRequestList(mergeRequests, repoId = null) {
+function projectMergeRequestList(mergeRequests, repoId = null) {
   return mergeRequests.map((mr) => projectMergeRequestSummary(mr, repoId));
 }
 
-export function projectMergeRequestView(mergeRequest, repoId = null, iid = null) {
+function projectMergeRequestView(mergeRequest, repoId = null, iid = null) {
   return {
     ...projectMergeRequestSummary(mergeRequest, repoId, iid),
     description: textOrNull(mergeRequest?.description),
@@ -28,7 +58,7 @@ export function projectMergeRequestView(mergeRequest, repoId = null, iid = null)
   };
 }
 
-export function projectCommitList(commits) {
+function projectCommitList(commits) {
   return commits.map((commit) => ({
     sha: idOrNull(commit?.id),
     title: textOrNull(commit?.title),
@@ -41,7 +71,7 @@ export function projectCommitList(commits) {
   }));
 }
 
-export function projectCommentResult(response, { repoId, mrIid, severity }) {
+function projectCommentResult(response, { repoId, mrIid, severity }) {
   return {
     comment_id: idOrNull(response?.id),
     repo_id: idOrNull(response?.project_id ?? repoId),
@@ -116,7 +146,7 @@ function stringArrayOrNull(values) {
   return values.map(idOrNull).filter((value) => value !== null);
 }
 
-export function idOrNull(value) {
+function idOrNull(value) {
   if (typeof value === 'string' && value.length > 0) return value;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
   if (typeof value === 'bigint' && value >= 0n) return String(value);
