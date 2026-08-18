@@ -21,9 +21,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run check
-      - run: npm run test:coverage
-      - run: npm run test:package
+      - run: npm run verify
 
   credential-smoke-windows:
     runs-on: windows-latest

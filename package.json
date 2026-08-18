@@ -24,6 +24,7 @@
     "test": "node --test",
     "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 node --test",
     "test:package": "node scripts/package-smoke.mjs",
+    "verify": "npm run check && npm run test:coverage && npm run test:package",
     "prepack": "npm run check && npm test"
   },
   "engines": {

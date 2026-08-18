@@ -149,10 +149,17 @@ human 输出按终端宽度处理中文、全角字符和 Emoji。`NO_COLOR`、`
 ## 开发与验收
 
 ```bash
+# 快速、只读的语法、ESLint 与格式门禁
 npm run check
+
+# 显式修复 lint 与格式问题
+npm run check:fix
+
+# 快速执行功能测试
 npm test
-npm run test:coverage
-npm run test:package
+
+# 完整执行静态检查、90% 覆盖率门禁与安装包烟测
+npm run verify
 ```
 
 完整产品契约见 [PRD](docs/PRD.md) 和 [API 接口清单](docs/API.md)，测试映射见 [验收报告](docs/ACCEPTANCE.md)。

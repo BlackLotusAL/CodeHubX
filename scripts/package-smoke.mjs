@@ -10,7 +10,13 @@ const installDirectory = await mkdtemp(join(tmpdir(), 'codehub-install-'));
 const npmCli = process.env.npm_execpath;
 if (!npmCli) throw new Error('npm_execpath is unavailable; run this script through npm.');
 
-run(process.execPath, [npmCli, 'pack', '--json', '--pack-destination', destination], root);
+// The enclosing verify command already runs static checks and coverage. Skipping lifecycle
+// scripts here prevents this smoke pack from executing prepack and repeating those gates.
+run(
+  process.execPath,
+  [npmCli, 'pack', '--ignore-scripts', '--json', '--pack-destination', destination],
+  root,
+);
 const tarball = join(destination, 'codehub-cli-0.1.0.tgz');
 await stat(tarball);
 
