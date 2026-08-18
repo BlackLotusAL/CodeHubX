@@ -32,9 +32,9 @@ test('所有 human 命令分支、空列表和 null 值都有稳定展示', () =
     credential_helper_cleared: true,
     api_host: 'https://code.test',
   }, { io: humanIo }), /已清除/);
-  assert.equal(renderHuman('repo.list', [], { io: humanIo }), '没有仓库。');
-  assert.equal(renderHuman('mr.list', [], { io: humanIo }), '没有 Merge Request。');
-  assert.equal(renderHuman('mr.commits', [], { io: humanIo }), '没有 Commit。');
+  assert.equal(renderHuman('repo.list', [], { io: humanIo }), '○ 没有仓库。');
+  assert.equal(renderHuman('mr.list', [], { io: humanIo }), '○ 没有 Merge Request。');
+  assert.equal(renderHuman('mr.commits', [], { io: humanIo }), '○ 没有 Commit。');
   assert.match(renderHuman('unknown', { ok: true }, { io: humanIo }), /"ok":true/);
 
   const repo = renderHuman('repo.view', {
@@ -46,8 +46,8 @@ test('所有 human 命令分支、空列表和 null 值都有稳定展示', () =
     default_branch: null,
     web_url: null,
   }, { io: humanIo });
-  assert.match(repo, /Project ID\s+1/);
-  assert.match(repo, /已归档\s+-/);
+  assert.match(repo, /Project 1/);
+  assert.match(repo, /状态未知/);
 
   const comment = renderHuman('mr.comment.create', {
     comment_id: null,
@@ -95,7 +95,7 @@ test('MR 详情、Commit 缺失字段和相同消息分支可读', () => {
     parent_shas: null,
   }], { io: humanIo });
   assert.match(commit, /作者 Author/);
-  assert.match(commit, /提交 -/);
+  assert.match(commit, /提交者 -/);
   assert.match(commit, /父 SHA -/);
   assert.equal((commit.match(/same/g) ?? []).length, 1);
 });
@@ -111,8 +111,8 @@ test('repo 列表跳过 null clone URL并处理未来与无效时间', () => {
       archived: false, updated_at: '2027-01-01T00:00:00Z',
     },
   ], { io: humanIo, now: Date.parse('2026-01-01T00:00:00Z') });
-  assert.match(output, /one\s+-/);
-  assert.match(output, /two\s+刚刚/);
+  assert.match(output, /one[\s\S]*更新 -/);
+  assert.match(output, /two[\s\S]*更新 刚刚/);
   assert.equal((output.match(/SSH/g) ?? []).length, 1);
 });
 

@@ -200,9 +200,14 @@ codehub mr comment create <iid> \
 ### 4.4 Human 输出
 
 - `--output human` 面向人工查看，不供程序解析。
-- 仓库列表按 ID、仓库路径和更新时间对齐，SSH/HTTPS clone URL 的起始列一致；MR 列表展示 IID、状态、标题、作者、源/目标分支和更新时间；Commit 使用包含父 SHA 的紧凑条目。
+- 列表先显示结果数量，再使用无外框卡片展示每一项，卡片之间以空行分隔；详情使用标题、元数据和内容区建立层级。
+- 仓库卡片展示状态图标、ID、仓库路径、更新时间和起始列一致的 SSH/HTTPS clone URL，并明确标识 archived；MR 卡片展示状态图标、IID、标题、作者、源/目标分支和更新时间；Commit 卡片展示短 SHA、标题、作者、提交者、时间、父 SHA 和消息。
+- MR 详情使用独立的变更、标签、描述和 Web 区域；新增与删除行数分别使用成功色和错误色。评论、配置和认证结果使用统一状态标题和缩进详情。
+- 基础 ANSI 语义色固定为：青色用于 ID、SHA 和 URL，绿色用于成功、活跃和新增，黄色用于警告、draft、locked、archived 和 minor，洋红色用于 merged、标签和 major，红色用于失败、closed、fatal 和删除，暗色用于字段名、时间和空值。
+- 图标语义固定为 `✓` 成功或已合并、`●` 活跃、`○` 中性或空状态、`!` 警告、`✗` 失败或关闭、`→` 分支方向；图标和颜色只增强含义，旁边必须保留可读文字。
 - 列表时间使用相对时间，超过 30 天显示日期；详情时间使用 RFC 3339 UTC。
 - 只有真实 TTY 可以输出状态色；重定向、`NO_COLOR`、`CLICOLOR=0` 或 `TERM=dumb` 时不得输出 ANSI，`CLICOLOR_FORCE` 可强制 human 颜色。
+- 业务 API 命令仅在 human 且 stdout、stderr 都是真实 TTY 时显示加载动画。动画延迟 300ms 出现、写入 stderr，并在成功、失败或取消后清除；JSON、非 TTY、本地配置和认证命令不得显示动画。
 - 输出根据终端宽度换行或截断，中文、全角字符和 Emoji 按实际显示宽度对齐。
 
 ## 5. 请求与 HTTP
@@ -266,6 +271,7 @@ X-Auth-token: <newToken>
 
 - 失败时 stdout 为空，stderr 输出简洁的简体中文错误信息。
 - 输出包含对应的稳定错误码；收到 HTTP 响应时可以显示状态码，但不固定文案模板。
+- 错误图标、错误码、正文和 HTTP 状态分别渲染；一般失败使用红色 `✗`，`WRITE_RESULT_UNKNOWN` 使用黄色 `!`，取消使用中性 `○`，不得将整行信息染成同一种颜色。
 - 颜色和 ANSI 行为遵循 4.4 节的 Human 输出规则。
 - 错误分类和退出码与 JSON 模式一致。
 
@@ -300,5 +306,5 @@ X-Auth-token: <newToken>
 6. 每个 HTTP 请求最多发送一次；评论结果无法确认时返回 WRITE_RESULT_UNKNOWN。
 7. 每个本地命令和业务命令旁只定义一次 JSON 成功结果类型与字段，不保留集中字段表或通用成功示例。
 8. JSON 错误只使用规定错误码及 code、message、可选 http_status。
-9. Human 成功输出正确处理颜色、ANSI、宽度和字符对齐；Human 错误只写 stderr，并包含稳定错误码。
+9. Human 成功输出使用卡片、语义颜色和图标，正确处理 ANSI、宽度、字符对齐与 TTY 加载动画；Human 错误只写 stderr，并包含稳定错误码。
 10. DevUC 账号明文显示并在提交后保留；成功输出保持投影后的 API 业务值及 URL userinfo 不变，同时阻止终端控制字符执行；跨 host 请求不携带认证 Header。

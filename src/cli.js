@@ -11,7 +11,12 @@ import {
   DEVUC_VALIDITY_MS,
 } from './constants.js';
 import { CliError, toCliError } from './errors.js';
-import { createProcessIo, writeFailure, writeSuccess } from './output.js';
+import {
+  createActivity,
+  createProcessIo,
+  writeFailure,
+  writeSuccess,
+} from './output.js';
 import { createInteractivePrompter } from './prompts.js';
 import { createProgram } from './program.js';
 import {
@@ -37,6 +42,7 @@ export async function runCli(argv, dependencies = {}) {
   const credentialStore = dependencies.credentialStore ?? new KeyringCredentialStore();
   const prompter = dependencies.prompter ?? createInteractivePrompter();
   const apiFactory = dependencies.apiFactory ?? createApiClient;
+  const activityFactory = dependencies.activityFactory ?? createActivity;
   const now = dependencies.now ?? Date.now;
   const signal = dependencies.signal;
   let executed = false;
@@ -50,7 +56,13 @@ export async function runCli(argv, dependencies = {}) {
       const timeoutMs = parseTimeout(rawOptions.timeout);
       if (signal?.aborted) throw new CliError('CANCELLED');
 
-      const data = await executeCommand({
+      const activity = activityFactory({
+        ...(dependencies.activityOptions ?? {}),
+        io,
+        format: selectedFormat,
+        command,
+      });
+      const data = await activity.run(() => executeCommand({
         command,
         positionals,
         options: rawOptions,
@@ -62,7 +74,7 @@ export async function runCli(argv, dependencies = {}) {
         fetchImpl: dependencies.fetchImpl,
         now,
         signal,
-      });
+      }));
       writeSuccess(io, selectedFormat, command, data, {
         now,
       });

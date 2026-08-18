@@ -119,7 +119,21 @@ ID 必须是正整数字符串。评论正文不 trim、不做模板或 Markdown
 codehub mr list --project-id 123 --output human
 ```
 
-human 输出按终端宽度处理中文、全角字符和 Emoji。`NO_COLOR`、`CLICOLOR=0`、`TERM=dumb` 或重定向会关闭颜色；`CLICOLOR_FORCE` 可强制颜色。
+human 输出使用无外框卡片、语义颜色和状态图标。例如：
+
+```text
+共 1 个 Merge Request
+
+● !17  修复终端输出对齐
+  opened · 林开发者 · 1 天前
+  fix/terminal-output → main
+```
+
+主要语义包括：绿色表示成功、活跃和新增，黄色表示警告、草稿或归档，洋红色表示已合并、标签或重要级别，红色表示失败、关闭和删除；ID、SHA 和 URL 使用青色，时间和其他辅助信息使用暗色。`✓`、`●`、`○`、`!`、`✗` 等图标旁始终保留文字，不依赖颜色表达含义。
+
+业务 API 命令在真实交互终端中执行且超过 300ms 时，会在 stderr 临时显示加载动画，并在最终结果或错误输出前清除。JSON、管道、重定向以及配置和认证命令不会显示动画。
+
+human 输出按终端宽度处理中文、全角字符和 Emoji。`NO_COLOR`、`CLICOLOR=0`、`TERM=dumb` 或重定向会关闭颜色；`CLICOLOR_FORCE` 可强制颜色。禁用颜色时不会产生 ANSI，卡片文字和图标仍保持可读。
 
 成功结果不执行敏感字符串替换，也不移除 URL 中的用户名或密码。JSON 中的业务值与投影后的 API 返回值一致；human 输出仅过滤可能控制终端的 ANSI 和控制字符。API 提供方必须确保返回字段适合直接输出，并注意管道、重定向和 CI 日志可能持久化这些内容。
 

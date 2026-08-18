@@ -1,10 +1,21 @@
 import stringWidth from 'string-width';
 import wrapAnsi from 'wrap-ansi';
-import { errorResult, humanErrorMessage } from './errors.js';
+import { errorResult } from './errors.js';
 
 const DEFAULT_COLUMNS = 100;
 const MIN_COLUMNS = 40;
 const MAX_COLUMNS = 240;
+const ACTIVITY_DELAY_MS = 300;
+const ACTIVITY_INTERVAL_MS = 80;
+const SPINNER_FRAMES = Object.freeze(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']);
+const ACTIVITY_MESSAGES = Object.freeze({
+  'repo.list': '正在获取仓库列表…',
+  'repo.view': '正在获取仓库详情…',
+  'mr.list': '正在获取 Merge Request 列表…',
+  'mr.view': '正在获取 Merge Request 详情…',
+  'mr.commits': '正在获取 Commit 列表…',
+  'mr.comment.create': '正在创建评论…',
+});
 const ANSI_PATTERN = /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 const JSON_TERMINAL_CONTROL_PATTERN = /[\u007F-\u009F]/g;
 
@@ -36,34 +47,108 @@ export function writeFailure(io, format, error) {
     io.stderr(`${serialiseJson(errorResult(error))}\n`);
     return;
   }
-  const colors = createColors(shouldUseColor(io.env, io.stderrIsTTY));
-  io.stderr(`${colors.error(humanErrorMessage(error))}\n`);
+  const theme = createTheme(shouldUseColor(io.env, io.stderrIsTTY));
+  io.stderr(`${renderHumanError(error, theme)}\n`);
+}
+
+export function createActivity({
+  io,
+  format,
+  command,
+  delayMs = ACTIVITY_DELAY_MS,
+  intervalMs = ACTIVITY_INTERVAL_MS,
+  timers = globalThis,
+} = {}) {
+  const message = ACTIVITY_MESSAGES[command];
+  const enabled = Boolean(
+    message &&
+    format === 'human' &&
+    io?.stdoutIsTTY &&
+    io?.stderrIsTTY,
+  );
+  const theme = createTheme(shouldUseColor(io?.env ?? {}, Boolean(io?.stderrIsTTY)));
+  let delayTimer = null;
+  let frameTimer = null;
+  let frameIndex = 0;
+  let shown = false;
+  let renderedWidth = 0;
+  let active = false;
+
+  const renderFrame = () => {
+    const frame = theme.accent(SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length]);
+    frameIndex += 1;
+    const line = `${frame} ${message}`;
+    renderedWidth = Math.max(renderedWidth, stringWidth(line));
+    shown = true;
+    io.stderr(`\r${line}`);
+  };
+
+  const start = () => {
+    if (!enabled || active) return;
+    active = true;
+    delayTimer = timers.setTimeout(() => {
+      delayTimer = null;
+      if (!active) return;
+      renderFrame();
+      frameTimer = timers.setInterval(renderFrame, intervalMs);
+      frameTimer?.unref?.();
+    }, delayMs);
+    delayTimer?.unref?.();
+  };
+
+  const stop = () => {
+    if (!active) return;
+    active = false;
+    if (delayTimer !== null) timers.clearTimeout(delayTimer);
+    if (frameTimer !== null) timers.clearInterval(frameTimer);
+    delayTimer = null;
+    frameTimer = null;
+    if (shown) io.stderr(`\r${' '.repeat(renderedWidth)}\r`);
+    shown = false;
+    renderedWidth = 0;
+  };
+
+  return {
+    enabled,
+    start,
+    stop,
+    async run(callback) {
+      start();
+      try {
+        return await callback();
+      } finally {
+        stop();
+      }
+    },
+  };
 }
 
 export function renderHuman(command, data, { io, now = Date.now } = {}) {
   const columns = clamp(io?.columns ?? DEFAULT_COLUMNS, MIN_COLUMNS, MAX_COLUMNS);
-  const colors = createColors(shouldUseColor(io?.env ?? {}, Boolean(io?.stdoutIsTTY)));
-  const context = { columns, colors, now: typeof now === 'function' ? now() : now };
+  const theme = createTheme(shouldUseColor(io?.env ?? {}, Boolean(io?.stdoutIsTTY)));
+  const context = { columns, theme, now: typeof now === 'function' ? now() : now };
 
   switch (command) {
     case 'config.init':
-      return data.created
-        ? `已创建配置文件：${safeText(data.config_path)}`
-        : `配置文件已存在，未覆盖：${safeText(data.config_path)}`;
+      return renderConfigInit(data, context);
     case 'auth.login':
-      return `认证已配置\n${definitionList([
-        ['认证方式', authTypeName(data.authentication_type)],
-        ['API 地址', data.api_host],
-      ], context)}`;
+      return statusCard('success', '认证已配置', [
+        ['认证方式', styledValue(authTypeName(data.authentication_type), theme.accent, context)],
+        ['API 地址', linkValue(data.api_host, context)],
+      ], context);
     case 'auth.status':
       return data.configured
-        ? `已登录\n${definitionList([
-            ['认证方式', authTypeName(data.authentication_type)],
-            ['API 地址', data.api_host],
-          ], context)}`
-        : `未登录\n${definitionList([['API 地址', data.api_host]], context)}`;
+        ? statusCard('success', '已登录', [
+            ['认证方式', styledValue(authTypeName(data.authentication_type), theme.accent, context)],
+            ['API 地址', linkValue(data.api_host, context)],
+          ], context)
+        : statusCard('neutral', '未登录', [
+            ['API 地址', linkValue(data.api_host, context)],
+          ], context);
     case 'auth.logout':
-      return `本地认证凭据已清除\n${definitionList([['API 地址', data.api_host]], context)}`;
+      return statusCard('success', '本地认证凭据已清除', [
+        ['API 地址', linkValue(data.api_host, context)],
+      ], context);
     case 'repo.list':
       return renderRepoList(data, context);
     case 'repo.view':
@@ -75,149 +160,353 @@ export function renderHuman(command, data, { io, now = Date.now } = {}) {
     case 'mr.commits':
       return renderCommitList(data, context);
     case 'mr.comment.create':
-      return `评论已创建\n${definitionList([
-        ['评论 ID', data.comment_id],
-        ['Project', data.repo_id],
-        ['MR IID', data.mr_iid],
-        ['严重级别', data.severity],
-        ['已解决', yesNo(data.resolved)],
-        ['Web', data.web_url],
-      ], context)}`;
+      return renderCommentResult(data, context);
     default:
       return safeText(JSON.stringify(data));
   }
 }
 
-function renderRepoList(repositories, context) {
-  if (repositories.length === 0) return '没有仓库。';
-  const idWidth = clamp(Math.max(2, ...repositories.map((row) => stringWidth(printable(row.repo_id)))), 2, 16);
-  const timeWidth = 12;
-  const nameWidth = Math.max(12, context.columns - idWidth - timeWidth - 4);
-  const header = `${pad('ID', idWidth)}  ${pad('仓库', nameWidth)}  更新时间`;
-  const lines = [context.colors.header(header)];
+function renderConfigInit(data, context) {
+  return data.created
+    ? statusCard('success', '已创建配置文件', [
+        ['路径', styledValue(data.config_path, context.theme.accent, context)],
+      ], context)
+    : statusCard('warning', '配置文件已存在，未覆盖', [
+        ['路径', styledValue(data.config_path, context.theme.accent, context)],
+      ], context);
+}
 
-  for (const row of repositories) {
-    lines.push(
-      `${pad(truncate(row.repo_id, idWidth), idWidth)}  ${pad(truncate(row.full_name, nameWidth), nameWidth)}  ${relativeTime(row.updated_at, context.now)}`,
-    );
-    const labelWidth = idWidth + 2;
-    for (const [label, value] of [['SSH', row.clone_urls?.ssh], ['HTTPS', row.clone_urls?.https]]) {
-      if (value === null) continue;
-      const prefix = `${' '.repeat(labelWidth)}${pad(label, 7)} `;
-      lines.push(...wrapWithIndent(value, context.columns, prefix, ' '.repeat(stringWidth(prefix))));
-    }
-  }
+function renderRepoList(repositories, context) {
+  if (repositories.length === 0) return emptyState('没有仓库。', context);
+  const cards = repositories.map((repository) => renderRepoCard(repository, context));
+  return `${countSummary(repositories.length, '个仓库', context)}\n\n${cards.join('\n\n')}`;
+}
+
+function renderRepoCard(repository, context) {
+  const status = repoStatus(repository.archived, context);
+  const prefix = `${status.icon} ${styledValue(repository.repo_id, context.theme.accent, context)}  `;
+  const lines = wrapRendered(
+    styledValue(repository.full_name, context.theme.title, context),
+    context.columns,
+    prefix,
+    ' '.repeat(stringWidth(prefix)),
+  );
+  lines.push(...wrapRendered(
+    `${status.text}${separator(context)}${context.theme.muted(`更新 ${relativeTime(repository.updated_at, context.now)}`)}`,
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...urlRows([
+    ['SSH', repository.clone_urls?.ssh],
+    ['HTTPS', repository.clone_urls?.https],
+  ], context, { skipMissing: true }));
   return lines.join('\n');
 }
 
 function renderRepoView(repository, context) {
-  return definitionList([
-    ['Project ID', repository.repo_id],
-    ['仓库', repository.full_name],
-    ['默认分支', repository.default_branch],
-    ['已归档', yesNo(repository.archived)],
-    ['更新时间', detailTime(repository.updated_at)],
+  const status = repoStatus(repository.archived, context);
+  const prefix = `${status.icon} ${context.theme.muted('Project')} ${styledValue(repository.repo_id, context.theme.accent, context)}  `;
+  const lines = wrapRendered(
+    styledValue(repository.full_name, context.theme.title, context),
+    context.columns,
+    prefix,
+    ' '.repeat(stringWidth(prefix)),
+  );
+  lines.push(...wrapRendered(
+    [
+      status.text,
+      `${context.theme.muted('默认分支')} ${styledValue(repository.default_branch, context.theme.accent, context)}`,
+    ].join(separator(context)),
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...wrapRendered(
+    `${context.theme.muted('更新')} ${context.theme.muted(detailTime(repository.updated_at))}`,
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...urlRows([
     ['SSH', repository.clone_urls?.ssh],
     ['HTTPS', repository.clone_urls?.https],
     ['Web', repository.web_url],
-  ], context);
+  ], context));
+  return lines.join('\n');
 }
 
 function renderMrList(mergeRequests, context) {
-  if (mergeRequests.length === 0) return '没有 Merge Request。';
-  const iidWidth = clamp(Math.max(3, ...mergeRequests.map((row) => stringWidth(printable(row.iid)))), 3, 12);
-  const stateWidth = 8;
-  const authorWidth = 12;
-  const timeWidth = 12;
-  const titleWidth = Math.max(12, context.columns - iidWidth - stateWidth - authorWidth - timeWidth - 8);
-  const header = [pad('IID', iidWidth), pad('状态', stateWidth), pad('标题', titleWidth), pad('作者', authorWidth), '更新时间'].join('  ');
-  const lines = [context.colors.header(header)];
+  if (mergeRequests.length === 0) return emptyState('没有 Merge Request。', context);
+  const cards = mergeRequests.map((mr) => renderMrCard(mr, context));
+  return `${countSummary(mergeRequests.length, '个 Merge Request', context)}\n\n${cards.join('\n\n')}`;
+}
 
-  for (const row of mergeRequests) {
-    const state = printable(row.state);
-    const cells = [
-      pad(truncate(row.iid, iidWidth), iidWidth),
-      pad(context.colors.state(state, row.state), stateWidth),
-      pad(truncate(row.title, titleWidth), titleWidth),
-      pad(truncate(authorName(row.author), authorWidth), authorWidth),
-      relativeTime(row.updated_at, context.now),
-    ];
-    lines.push(cells.join('  '));
-    const branch = `${printable(row.source_branch)} → ${printable(row.target_branch)}`;
-    lines.push(...wrapWithIndent(branch, context.columns, ' '.repeat(iidWidth + 2), ' '.repeat(iidWidth + 2)));
-  }
+function renderMrCard(mr, context) {
+  const status = mrStatus(mr.state, context);
+  const prefix = `${status.icon} ${styledValue(mrIidText(mr.iid), context.theme.accent, context, true)}  `;
+  const lines = wrapRendered(
+    styledValue(mr.title, context.theme.title, context),
+    context.columns,
+    prefix,
+    ' '.repeat(stringWidth(prefix)),
+  );
+  const metadata = [status.text];
+  if (mr.is_draft === true) metadata.push(context.theme.warning('draft'));
+  metadata.push(styledValue(authorName(mr.author), context.theme.plain, context));
+  metadata.push(context.theme.muted(relativeTime(mr.updated_at, context.now)));
+  lines.push(...wrapRendered(metadata.join(separator(context)), context.columns, '  ', '  '));
+  lines.push(...wrapRendered(branchText(mr.source_branch, mr.target_branch, context), context.columns, '  ', '  '));
   return lines.join('\n');
 }
 
 function renderMrView(mr, context) {
-  return definitionList([
-    ['Project ID', mr.repo_id],
-    ['MR ID', mr.mr_id],
-    ['IID', mr.iid],
-    ['标题', mr.title],
-    ['状态', mr.state],
-    ['草稿', yesNo(mr.is_draft)],
-    ['作者', authorName(mr.author)],
-    ['分支', `${printable(mr.source_branch)} → ${printable(mr.target_branch)}`],
-    ['标签', mr.labels?.join(', ') ?? null],
-    ['创建时间', detailTime(mr.created_at)],
-    ['更新时间', detailTime(mr.updated_at)],
-    ['变更', changesText(mr.changes)],
-    ['描述', mr.description],
-    ['Web', mr.web_url],
-  ], context);
+  const status = mrStatus(mr.state, context);
+  const prefix = `${status.icon} ${styledValue(mrIidText(mr.iid), context.theme.accent, context, true)}  `;
+  const lines = wrapRendered(
+    styledValue(mr.title, context.theme.title, context),
+    context.columns,
+    prefix,
+    ' '.repeat(stringWidth(prefix)),
+  );
+  lines.push(...wrapRendered([
+    `${context.theme.muted('Project')} ${styledValue(mr.repo_id, context.theme.accent, context)}`,
+    `${context.theme.muted('MR')} ${styledValue(mr.mr_id, context.theme.accent, context)}`,
+    `${context.theme.muted('作者')} ${styledValue(authorName(mr.author), context.theme.plain, context)}`,
+  ].join(separator(context)), context.columns, '  ', '  '));
+  lines.push(...wrapRendered([
+    `${context.theme.muted('状态')} ${status.text}`,
+    draftText(mr.is_draft, context),
+  ].join(separator(context)), context.columns, '  ', '  '));
+  lines.push(...wrapRendered(
+    `${context.theme.muted('分支')} ${branchText(mr.source_branch, mr.target_branch, context)}`,
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...wrapRendered(
+    `${context.theme.muted('创建')} ${context.theme.muted(detailTime(mr.created_at))}`,
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...wrapRendered(
+    `${context.theme.muted('更新')} ${context.theme.muted(detailTime(mr.updated_at))}`,
+    context.columns,
+    '  ',
+    '  ',
+  ));
+  lines.push(...wrapRendered(labelText(mr.labels, context), context.columns, '  ', '  '));
+
+  lines.push('', context.theme.title('变更'));
+  lines.push(...wrapRendered(changesText(mr.changes, context), context.columns, '  ', '  '));
+  lines.push('', context.theme.title('描述'));
+  lines.push(...wrapRendered(styledValue(mr.description, context.theme.plain, context), context.columns, '  ', '  '));
+  lines.push('', ...urlRows([['Web', mr.web_url]], context));
+  return lines.join('\n');
 }
 
 function renderCommitList(commits, context) {
-  if (commits.length === 0) return '没有 Commit。';
-  const lines = [];
-  for (const commit of commits) {
-    const sha = printable(commit.sha);
-    lines.push(context.colors.header(`${sha.slice(0, 12)} ${printable(commit.title)}`));
-    const details = [
-      `作者 ${personName(commit.author)}`,
-      `提交 ${personName(commit.committer)}`,
-      detailTime(commit.committed_at),
-    ].join(' · ');
-    lines.push(...wrapWithIndent(details, context.columns, '  ', '  '));
-    const parents = commit.parent_shas?.length ? commit.parent_shas.join(', ') : '-';
-    lines.push(...wrapWithIndent(`父 SHA ${parents}`, context.columns, '  ', '    '));
-    if (commit.message && commit.message !== commit.title) {
-      lines.push(...wrapWithIndent(commit.message, context.columns, '  ', '  '));
-    }
+  if (commits.length === 0) return emptyState('没有 Commit。', context);
+  const cards = commits.map((commit) => renderCommitCard(commit, context));
+  return `${countSummary(commits.length, '个 Commit', context)}\n\n${cards.join('\n\n')}`;
+}
+
+function renderCommitCard(commit, context) {
+  const sha = inlinePrintable(commit.sha);
+  const shortSha = sha === '-' ? sha : sha.slice(0, 12);
+  const prefix = `${context.theme.neutral('●')} ${styledValue(shortSha, context.theme.accent, context, true)}  `;
+  const lines = wrapRendered(
+    styledValue(commit.title, context.theme.title, context),
+    context.columns,
+    prefix,
+    ' '.repeat(stringWidth(prefix)),
+  );
+  lines.push(...wrapRendered([
+    `${context.theme.muted('作者')} ${styledValue(personName(commit.author), context.theme.plain, context)}`,
+    `${context.theme.muted('提交者')} ${styledValue(personName(commit.committer), context.theme.plain, context)}`,
+    context.theme.muted(detailTime(commit.committed_at)),
+  ].join(separator(context)), context.columns, '  ', '  '));
+  const parents = commit.parent_shas?.length ? commit.parent_shas.join(', ') : null;
+  lines.push(...wrapRendered(
+    `${context.theme.muted('父 SHA')} ${styledValue(parents, context.theme.accent, context)}`,
+    context.columns,
+    '  ',
+    '    ',
+  ));
+  if (commit.message && commit.message !== commit.title) {
+    lines.push(...wrapRendered(
+      styledValue(commit.message, context.theme.plain, context),
+      context.columns,
+      `${context.theme.muted('  消息')}  `,
+      '        ',
+    ));
   }
   return lines.join('\n');
 }
 
-function definitionList(entries, context) {
-  const valid = entries.map(([label, value]) => [label, printable(value)]);
-  const labelWidth = Math.max(...valid.map(([label]) => stringWidth(label)));
-  const lines = [];
-  for (const [label, value] of valid) {
-    const first = `${pad(label, labelWidth)}  `;
-    const next = ' '.repeat(stringWidth(first));
-    lines.push(...wrapWithIndent(value, context.columns, first, next));
-  }
-  return lines.join('\n');
+function renderCommentResult(data, context) {
+  return statusCard('success', '评论已创建', [
+    ['评论', styledValue(data.comment_id, context.theme.accent, context)],
+    ['Project', styledValue(data.repo_id, context.theme.accent, context)],
+    ['MR', styledValue(mrIidText(data.mr_iid), context.theme.accent, context, true)],
+    ['严重级别', severityText(data.severity, context)],
+    ['已解决', booleanText(data.resolved, context)],
+    ['Web', linkValue(data.web_url, context)],
+  ], context);
 }
 
-function wrapWithIndent(value, columns, firstIndent = '', nextIndent = firstIndent) {
-  const safe = safeText(value);
+function statusCard(kind, title, entries, context) {
+  const status = statusPresentation(kind, context);
+  return [
+    `${status.icon} ${context.theme.title(safeText(title))}`,
+    ...detailRows(entries, context),
+  ].join('\n');
+}
+
+function detailRows(entries, context) {
+  const labelWidth = Math.max(...entries.map(([label]) => stringWidth(label)));
+  const lines = [];
+  for (const [label, renderedValue] of entries) {
+    const prefix = `  ${context.theme.muted(pad(safeText(label), labelWidth))}  `;
+    lines.push(...wrapRendered(renderedValue, context.columns, prefix, ' '.repeat(stringWidth(prefix))));
+  }
+  return lines;
+}
+
+function urlRows(entries, context, { skipMissing = false } = {}) {
+  const rows = skipMissing
+    ? entries.filter(([, value]) => value !== null && value !== undefined && value !== '')
+    : entries;
+  if (rows.length === 0) return [];
+  const labelWidth = Math.max(...rows.map(([label]) => stringWidth(label)));
+  const lines = [];
+  for (const [label, value] of rows) {
+    const prefix = `  ${context.theme.muted(pad(label, labelWidth))}  `;
+    lines.push(...wrapRendered(linkValue(value, context), context.columns, prefix, ' '.repeat(stringWidth(prefix))));
+  }
+  return lines;
+}
+
+function countSummary(count, noun, context) {
+  return `${context.theme.muted('共')} ${context.theme.accent(String(count))} ${context.theme.muted(noun)}`;
+}
+
+function emptyState(message, context) {
+  return context.theme.muted(`○ ${safeText(message)}`);
+}
+
+function repoStatus(archived, context) {
+  if (archived === true) {
+    return { icon: context.theme.warning('!'), text: context.theme.warning('archived') };
+  }
+  if (archived === false) {
+    return { icon: context.theme.success('●'), text: context.theme.success('active') };
+  }
+  return { icon: context.theme.neutral('○'), text: context.theme.muted('状态未知') };
+}
+
+function mrStatus(state, context) {
+  const printableState = inlinePrintable(state);
+  if (state === 'opened' || state === 'open') {
+    return { icon: context.theme.success('●'), text: context.theme.success(printableState) };
+  }
+  if (state === 'merged') {
+    return { icon: context.theme.merged('✓'), text: context.theme.merged(printableState) };
+  }
+  if (state === 'closed') {
+    return { icon: context.theme.error('✗'), text: context.theme.error(printableState) };
+  }
+  if (state === 'locked') {
+    return { icon: context.theme.warning('!'), text: context.theme.warning(printableState) };
+  }
+  return { icon: context.theme.neutral('○'), text: styledValue(state, context.theme.muted, context) };
+}
+
+function statusPresentation(kind, context) {
+  if (kind === 'success') return { icon: context.theme.success('✓') };
+  if (kind === 'warning') return { icon: context.theme.warning('!') };
+  return { icon: context.theme.neutral('○') };
+}
+
+function renderHumanError(error, theme) {
+  const message = safeText(error.humanMessage ?? 'CodeHub 请求失败。');
+  const code = `[${safeText(error.code ?? 'HTTP_ERROR')}]`;
+  const status = error.httpStatus === null || error.httpStatus === undefined
+    ? ''
+    : theme.muted(`（HTTP ${safeText(error.httpStatus)}）`);
+  if (error.code === 'WRITE_RESULT_UNKNOWN') {
+    return `${theme.warning('!')} ${theme.warningBold(code)} ${message}${status}`;
+  }
+  if (error.code === 'CANCELLED') {
+    return `${theme.neutral('○')} ${theme.muted(code)} ${message}${status}`;
+  }
+  return `${theme.error('✗')} ${theme.errorBold(code)} ${message}${status}`;
+}
+
+function styledValue(value, style, context, alreadySafe = false) {
+  const text = alreadySafe ? String(value) : printable(value);
+  return text === '-' ? context.theme.muted(text) : style(text);
+}
+
+function linkValue(value, context) {
+  const text = printable(value);
+  return text === '-' ? context.theme.muted(text) : context.theme.link(text);
+}
+
+function branchText(source, target, context) {
+  return `${styledValue(source, context.theme.accent, context)} ${context.theme.muted('→')} ${styledValue(target, context.theme.accent, context)}`;
+}
+
+function draftText(value, context) {
+  if (value === true) return `${context.theme.muted('草稿')} ${context.theme.warning('是')}`;
+  if (value === false) return `${context.theme.muted('草稿')} ${context.theme.success('否')}`;
+  return `${context.theme.muted('草稿')} ${context.theme.muted('-')}`;
+}
+
+function booleanText(value, context) {
+  if (value === true) return context.theme.success('是');
+  if (value === false) return context.theme.warning('否');
+  return context.theme.muted('-');
+}
+
+function severityText(value, context) {
+  const text = printable(value);
+  if (value === 'suggestion') return context.theme.accent(text);
+  if (value === 'minor') return context.theme.warning(text);
+  if (value === 'major') return context.theme.merged(text);
+  if (value === 'fatal') return context.theme.error(text);
+  return context.theme.muted(text);
+}
+
+function labelText(labels, context) {
+  const prefix = context.theme.muted('标签');
+  if (!labels?.length) return `${prefix} ${context.theme.muted('-')}`;
+  return `${prefix} ${labels.map((label) => context.theme.merged(`[${inlinePrintable(label)}]`)).join(' ')}`;
+}
+
+function changesText(changes, context) {
+  if (!changes) return context.theme.muted('-');
+  const files = changes.files === null || changes.files === undefined
+    ? context.theme.muted('- 个文件')
+    : `${styledValue(changes.files, context.theme.accent, context)} ${context.theme.muted('个文件')}`;
+  const additions = changes.additions === null || changes.additions === undefined
+    ? context.theme.muted('+-')
+    : context.theme.success(`+${inlinePrintable(changes.additions)}`);
+  const deletions = changes.deletions === null || changes.deletions === undefined
+    ? context.theme.muted('--')
+    : context.theme.error(`-${inlinePrintable(changes.deletions)}`);
+  return [files, additions, deletions].join(separator(context));
+}
+
+function separator(context) {
+  return context.theme.muted(' · ');
+}
+
+function wrapRendered(value, columns, firstIndent = '', nextIndent = firstIndent) {
   const width = Math.max(1, columns - stringWidth(nextIndent));
-  const wrapped = wrapAnsi(safe, width, { hard: true, trim: false }).split('\n');
+  const wrapped = wrapAnsi(String(value), width, { hard: true, trim: false }).split('\n');
   return wrapped.map((line, index) => `${index === 0 ? firstIndent : nextIndent}${line}`);
-}
-
-function truncate(value, width) {
-  const text = safeText(printable(value));
-  if (stringWidth(text) <= width) return text;
-  if (width <= 1) return '…'.slice(0, width);
-  let result = '';
-  for (const character of text) {
-    if (stringWidth(`${result}${character}…`) > width) break;
-    result += character;
-  }
-  return `${result}…`;
 }
 
 function pad(value, width) {
@@ -251,17 +540,24 @@ function shouldUseColor(env, isTTY) {
   return isTTY;
 }
 
-function createColors(enabled) {
-  const color = (code, value) => enabled ? `\u001B[${code}m${value}\u001B[0m` : value;
+function createTheme(enabled) {
+  const style = (...codes) => (value) => enabled
+    ? `\u001B[${codes.join(';')}m${value}\u001B[0m`
+    : String(value);
   return {
-    header: (value) => color('1', value),
-    error: (value) => color('31', value),
-    state: (value, state) => {
-      if (state === 'opened' || state === 'open') return color('32', value);
-      if (state === 'merged') return color('35', value);
-      if (state === 'closed') return color('31', value);
-      return value;
-    },
+    enabled,
+    plain: (value) => String(value),
+    title: style('1'),
+    muted: style('2'),
+    accent: style('36'),
+    link: style('36', '4'),
+    success: style('32'),
+    warning: style('33'),
+    warningBold: style('1', '33'),
+    merged: style('35'),
+    error: style('31'),
+    errorBold: style('1', '31'),
+    neutral: style('2'),
   };
 }
 
@@ -282,6 +578,15 @@ function printable(value) {
   return value === null || value === undefined || value === '' ? '-' : safeText(value);
 }
 
+function inlinePrintable(value) {
+  return printable(value).replace(/[\t\r\n]+/g, ' ');
+}
+
+function mrIidText(value) {
+  const text = inlinePrintable(value);
+  return text === '-' ? text : `!${text}`;
+}
+
 function authorName(author) {
   return author?.name ?? author?.username ?? '-';
 }
@@ -293,15 +598,6 @@ function personName(person) {
 
 function authTypeName(value) {
   return value === 'private_token' ? 'Private Token' : value === 'devuc' ? 'DevUC' : '-';
-}
-
-function yesNo(value) {
-  return value === true ? '是' : value === false ? '否' : '-';
-}
-
-function changesText(changes) {
-  if (!changes) return '-';
-  return `${printable(changes.files)} 个文件，+${printable(changes.additions)} / -${printable(changes.deletions)}`;
 }
 
 function clamp(value, minimum, maximum) {
