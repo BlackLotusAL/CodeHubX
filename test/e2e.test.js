@@ -59,14 +59,19 @@ test('真实进程占位配置在使用时返回 CONFIG_ERROR', async () => {
 test('真实非 TTY 登录在读取任何秘密前返回 INVALID_ARGUMENT', async () => {
   const base = await mkdtemp(join(tmpdir(), 'codehub-e2e-'));
   const env = isolatedEnv(base);
-  const configPath = process.platform === 'win32'
-    ? join(base, 'codehub', 'config.json')
-    : join(base, 'codehub', 'config.json');
+  const configPath =
+    process.platform === 'win32'
+      ? join(base, 'codehub', 'config.json')
+      : join(base, 'codehub', 'config.json');
   await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, JSON.stringify({
-    devuc: { endpoint: 'https://devuc.test/token', appCode: 'devuc-app' },
-    codehub: { endpoint: 'https://codehub.test/api/v4', appCode: 'code-app' },
-  }), 'utf8');
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      devuc: { endpoint: 'https://devuc.test/token', appCode: 'devuc-app' },
+      codehub: { endpoint: 'https://codehub.test/api/v4', appCode: 'code-app' },
+    }),
+    'utf8',
+  );
   const login = await run(['auth', 'login'], env);
   assert.equal(login.code, 2);
   assert.equal(login.stdout, '');

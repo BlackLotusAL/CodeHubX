@@ -21,16 +21,18 @@ test('项目操作将 adapter 调用与稳定项目结果绑定', async () => {
     },
   });
 
-  assert.deepEqual(await operations.projects.list('8'), [{
-    repo_id: '9001',
-    full_name: 'platform/agent-tools',
-    clone_urls: {
-      ssh: 'git@codehub.test:platform/agent-tools.git',
-      https: 'https://codehub.test/platform/agent-tools.git',
+  assert.deepEqual(await operations.projects.list('8'), [
+    {
+      repo_id: '9001',
+      full_name: 'platform/agent-tools',
+      clone_urls: {
+        ssh: 'git@codehub.test:platform/agent-tools.git',
+        https: 'https://codehub.test/platform/agent-tools.git',
+      },
+      archived: false,
+      updated_at: '2026-07-31T08:00:00Z',
     },
-    archived: false,
-    updated_at: '2026-07-31T08:00:00Z',
-  }]);
+  ]);
   assert.deepEqual(await operations.projects.view('123'), {
     repo_id: '123',
     full_name: null,
@@ -156,9 +158,10 @@ test('操作 interface 保持 ID、null 和字段回退规则', async () => {
   });
 
   const projects = await operations.projects.list('8');
-  assert.deepEqual(projects.map((project) => project.repo_id), [
-    null, '42', '42', null, null, '0001',
-  ]);
+  assert.deepEqual(
+    projects.map((project) => project.repo_id),
+    [null, '42', '42', null, null, '0001'],
+  );
   assert.equal(projects[0].full_name, 'Name');
   assert.equal(projects[0].archived, null);
   assert.equal(projects[0].updated_at, 'time');
@@ -177,16 +180,22 @@ test('操作 interface 保持 ID、null 和字段回退规则', async () => {
   assert.equal(commit.author, null);
   assert.equal(commit.parent_shas, null);
 
-  assert.deepEqual(await operations.mergeRequests.createComment({
-    projectId: '1', iid: '2', body: 'x', severity: 'suggestion',
-  }), {
-    comment_id: null,
-    repo_id: '1',
-    mr_iid: '2',
-    severity: 'suggestion',
-    resolved: null,
-    web_url: null,
-  });
+  assert.deepEqual(
+    await operations.mergeRequests.createComment({
+      projectId: '1',
+      iid: '2',
+      body: 'x',
+      severity: 'suggestion',
+    }),
+    {
+      comment_id: null,
+      repo_id: '1',
+      mr_iid: '2',
+      severity: 'suggestion',
+      resolved: null,
+      web_url: null,
+    },
+  );
 });
 
 test('项目操作不改写服务端字符串和 SSH URL 用户名', async () => {

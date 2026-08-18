@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "check": "node scripts/check.mjs",
+    "check:fix": "eslint . --fix --max-warnings 0 && prettier . --write",
     "test": "node --test",
     "test:coverage": "c8 --check-coverage --lines 90 --branches 90 --functions 90 --statements 90 node --test",
     "test:package": "node scripts/package-smoke.mjs",
@@ -43,6 +44,10 @@
     "wrap-ansi": "^10.0.0"
   },
   "devDependencies": {
-    "c8": "^10.1.3"
+    "@eslint/js": "10.0.1",
+    "c8": "^10.1.3",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "prettier": "3.9.6"
   }
 }

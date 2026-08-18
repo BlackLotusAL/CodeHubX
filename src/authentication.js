@@ -1,9 +1,5 @@
 import { requireCodehubConfig, requireDevucConfig } from './config.js';
-import {
-  AUTH_TYPES,
-  DEVUC_REFRESH_LEEWAY_MS,
-  DEVUC_VALIDITY_MS,
-} from './constants.js';
+import { AUTH_TYPES, DEVUC_REFRESH_LEEWAY_MS, DEVUC_VALIDITY_MS } from './constants.js';
 import { devucCredential, privateCredential } from './credentials.js';
 import { CliError } from './errors.js';
 
@@ -43,12 +39,15 @@ export function createAuthenticationSession({
         values.account,
         values.password,
       );
-      await credentialStore.save(codehubConfig.origin, devucCredential({
-        account: values.account,
-        password: values.password,
-        token,
-        issuedAtMs: now(),
-      }));
+      await credentialStore.save(
+        codehubConfig.origin,
+        devucCredential({
+          account: values.account,
+          password: values.password,
+          token,
+          issuedAtMs: now(),
+        }),
+      );
       return loginResult(codehubConfig.origin, authenticationType);
     }
 

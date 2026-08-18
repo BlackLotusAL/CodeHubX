@@ -1,12 +1,7 @@
 import { CliError } from './errors.js';
 import { requestJson } from './http.js';
 
-export function createDevucClient({
-  devuc,
-  timeoutMs,
-  fetchImpl,
-  signal,
-} = {}) {
+export function createDevucClient({ devuc, timeoutMs, fetchImpl, signal } = {}) {
   return Object.freeze({ login });
 
   async function login(account, password) {

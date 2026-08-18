@@ -32,7 +32,10 @@ test('登录提示使用选择、掩码输入、自定义流和 AbortSignal', as
     'private_token',
   );
   assert.equal(await prompter.readPrivateToken({ signal: controller.signal }), 'secret');
-  assert.deepEqual(calls[0].options.choices.map((choice) => choice.value), ['private_token', 'devuc']);
+  assert.deepEqual(
+    calls[0].options.choices.map((choice) => choice.value),
+    ['private_token', 'devuc'],
+  );
   assert.equal(calls[1].options.mask, true);
   assert.equal(calls[0].context.input, ttyInput);
   assert.equal(calls[0].context.output, ttyOutput);
@@ -79,9 +82,15 @@ test('非 TTY 在调用 Inquirer 前返回 INVALID_ARGUMENT', async () => {
     input: { isTTY: false },
     output: ttyOutput,
     promptApi: {
-      input: async () => { calls += 1; },
-      select: async () => { calls += 1; },
-      password: async () => { calls += 1; },
+      input: async () => {
+        calls += 1;
+      },
+      select: async () => {
+        calls += 1;
+      },
+      password: async () => {
+        calls += 1;
+      },
     },
   });
   await assert.rejects(prompter.chooseAuthenticationType(), { code: 'INVALID_ARGUMENT' });
@@ -96,8 +105,12 @@ test('Ctrl+C 与 AbortPromptError 转换为 CANCELLED', async () => {
       input: ttyInput,
       output: ttyOutput,
       promptApi: {
-        select: async () => { throw Object.assign(new Error(name), { name }); },
-        password: async () => { throw Object.assign(new Error(name), { name }); },
+        select: async () => {
+          throw Object.assign(new Error(name), { name });
+        },
+        password: async () => {
+          throw Object.assign(new Error(name), { name });
+        },
       },
     });
     await assert.rejects(prompter.chooseAuthenticationType(), { code: 'CANCELLED' });

@@ -24,13 +24,13 @@
 
 ## 1. DevUC 授权
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `POST`                                                       |
-| **URL**          | `${config.devuc.endpoint}`                                   |
-| **请求 Headers** | `X-Apig-AppCode: <config.devuc.appCode>`                     |
-| **请求 Body**    | ```json { "account": "<字母+数字>", "password": "<密码>" } ``` |
-| **响应 Body**    | ```json { "result": { "newToken": "xxx", "token": "xxx" }, "status": "ok" } ``` |
+| 字段             | 内容                                                                        |
+| ---------------- | --------------------------------------------------------------------------- |
+| **Method**       | `POST`                                                                      |
+| **URL**          | `${config.devuc.endpoint}`                                                  |
+| **请求 Headers** | `X-Apig-AppCode: <config.devuc.appCode>`                                    |
+| **请求 Body**    | `json { "account": "<字母+数字>", "password": "<密码>" } `                  |
+| **响应 Body**    | `json { "result": { "newToken": "xxx", "token": "xxx" }, "status": "ok" } ` |
 
 DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-token` 鉴权的客户端须实现自动刷新 token
 
@@ -38,13 +38,13 @@ DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-tok
 
 ## 2. Group 中包含的 Project 列表
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `GET`                                                        |
-| **URL**          | `${config.codehub.endpoint}/groups/<group_id>/projects`      |
+| 字段             | 内容                                                                           |
+| ---------------- | ------------------------------------------------------------------------------ |
+| **Method**       | `GET`                                                                          |
+| **URL**          | `${config.codehub.endpoint}/groups/<group_id>/projects`                        |
 | **请求 Headers** | `X-Apig-AppCode: <config.codehub.appCode>` + `private-token` 或 `X-Auth-token` |
-| **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回 Project 数组                                            |
+| **请求 Body**    | 无                                                                             |
+| **响应 Body**    | 返回 Project 数组                                                              |
 
 **关键响应字段：**
 
@@ -64,13 +64,13 @@ DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-tok
 
 ## 3. 获取单个 Project 详情
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `GET`                                                        |
-| **URL**          | `${config.codehub.endpoint}/projects/<project_id>`           |
-| **请求 Headers** | 同上（同 API #2）                                            |
-| **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回 Project 完整详情对象                                    |
+| 字段             | 内容                                               |
+| ---------------- | -------------------------------------------------- |
+| **Method**       | `GET`                                              |
+| **URL**          | `${config.codehub.endpoint}/projects/<project_id>` |
+| **请求 Headers** | 同上（同 API #2）                                  |
+| **请求 Body**    | 无                                                 |
+| **响应 Body**    | 返回 Project 完整详情对象                          |
 
 **关键响应字段（相比列表 API 额外返回）：**
 
@@ -105,13 +105,13 @@ DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-tok
 
 ## 4. Project 中包含的 Merge Request 列表
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `GET`                                                        |
+| 字段             | 内容                                                                      |
+| ---------------- | ------------------------------------------------------------------------- |
+| **Method**       | `GET`                                                                     |
 | **URL**          | `${config.codehub.endpoint}/projects/<project_id>/isource/merge_requests` |
-| **请求 Headers** | 同上                                                         |
-| **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回 Merge Request 数组                                      |
+| **请求 Headers** | 同上                                                                      |
+| **请求 Body**    | 无                                                                        |
+| **响应 Body**    | 返回 Merge Request 数组                                                   |
 
 **关键响应字段：**
 
@@ -147,25 +147,25 @@ DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-tok
 
 ## 5. 获取单个 Merge Request 详情
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `GET`                                                        |
+| 字段             | 内容                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| **Method**       | `GET`                                                                                         |
 | **URL**          | `${config.codehub.endpoint}/projects/<project_id>/isource/merge_requests/<merge_request_iid>` |
-| **请求 Headers** | 同上                                                         |
-| **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回单个 Merge Request 完整详情对象，字段参见 API #4         |
+| **请求 Headers** | 同上                                                                                          |
+| **请求 Body**    | 无                                                                                            |
+| **响应 Body**    | 返回单个 Merge Request 完整详情对象，字段参见 API #4                                          |
 
 ---
 
 ## 6. 获取 Merge Request 中包含的 Commit
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `GET`                                                        |
+| 字段             | 内容                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| **Method**       | `GET`                                                                                         |
 | **URL**          | `${config.codehub.endpoint}/projects/<project_id>/merge_requests/<merge_request_iid>/commits` |
-| **请求 Headers** | 同上                                                         |
-| **请求 Body**    | 无                                                           |
-| **响应 Body**    | 返回 Commit 数组                                             |
+| **请求 Headers** | 同上                                                                                          |
+| **请求 Body**    | 无                                                                                            |
+| **响应 Body**    | 返回 Commit 数组                                                                              |
 
 **关键响应字段：**
 
@@ -185,19 +185,19 @@ DevUC 授权获得的 `newToken` 有效期为 **24 小时**。使用 `X-Auth-tok
 
 ## 7. 创建 Merge Request 评论
 
-| 字段             | 内容                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| **Method**       | `POST`                                                       |
+| 字段             | 内容                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| **Method**       | `POST`                                                                                            |
 | **URL**          | `${config.codehub.endpoint}/projects/<project_id>/merge_requests/<merge_request_iid>/discussions` |
-| **请求 Headers** | 同上                                                         |
-| **请求 Body**    | ```json { "body": "Testing", "severity": "major" } ```       |
-| **响应 Body**    | 返回创建的 Discussion 完整对象                               |
+| **请求 Headers** | 同上                                                                                              |
+| **请求 Body**    | `json { "body": "Testing", "severity": "major" } `                                                |
+| **响应 Body**    | 返回创建的 Discussion 完整对象                                                                    |
 
 **请求 Body 字段说明：**
 
-| 字段       | 类型   | 必填 | 说明                                                         |
-| ---------- | ------ | ---- | ------------------------------------------------------------ |
-| `body`     | string | 是   | 评论内容                                                     |
+| 字段       | 类型   | 必填 | 说明                                                              |
+| ---------- | ------ | ---- | ----------------------------------------------------------------- |
+| `body`     | string | 是   | 评论内容                                                          |
 | `severity` | string | 否   | 严重级别，可选值：`suggestion`（默认）、`minor`、`major`、`fatal` |
 
 **关键响应字段：**

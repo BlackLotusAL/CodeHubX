@@ -41,7 +41,8 @@ export function createInteractivePrompter({
             {
               message: '请输入 Private Token',
               mask: true,
-              validate: (value) => validatePrompt(value, privateToken, 'Token 不能为空或包含换行符'),
+              validate: (value) =>
+                validatePrompt(value, privateToken, 'Token 不能为空或包含换行符'),
             },
             promptContext(input, terminal.stream, signal),
           );
@@ -67,7 +68,8 @@ export function createInteractivePrompter({
             {
               message: '请输入 DevUC 密码',
               mask: true,
-              validate: (candidate) => validatePrompt(candidate, devucPassword, '密码不能为空或包含换行符'),
+              validate: (candidate) =>
+                validatePrompt(candidate, devucPassword, '密码不能为空或包含换行符'),
             },
             promptContext(input, terminal.stream, signal),
           );

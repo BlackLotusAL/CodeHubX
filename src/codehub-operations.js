@@ -2,28 +2,20 @@ export function createCodehubOperations(adapter) {
   return Object.freeze({
     projects: Object.freeze({
       list: async (groupId) => projectRepoList(await adapter.listProjects(groupId)),
-      view: async (projectId) => projectRepoView(
-        await adapter.viewProject(projectId),
-        projectId,
-      ),
+      view: async (projectId) => projectRepoView(await adapter.viewProject(projectId), projectId),
     }),
     mergeRequests: Object.freeze({
-      list: async ({ projectId, state }) => projectMergeRequestList(
-        await adapter.listMergeRequests(projectId, state),
-        projectId,
-      ),
-      view: async ({ projectId, iid }) => projectMergeRequestView(
-        await adapter.viewMergeRequest(projectId, iid),
-        projectId,
-        iid,
-      ),
-      commits: async ({ projectId, iid }) => projectCommitList(
-        await adapter.listMergeRequestCommits(projectId, iid),
-      ),
-      createComment: async ({ projectId, iid, body, severity }) => projectCommentResult(
-        await adapter.createMergeRequestComment(projectId, iid, body, severity),
-        { repoId: projectId, mrIid: iid, severity },
-      ),
+      list: async ({ projectId, state }) =>
+        projectMergeRequestList(await adapter.listMergeRequests(projectId, state), projectId),
+      view: async ({ projectId, iid }) =>
+        projectMergeRequestView(await adapter.viewMergeRequest(projectId, iid), projectId, iid),
+      commits: async ({ projectId, iid }) =>
+        projectCommitList(await adapter.listMergeRequestCommits(projectId, iid)),
+      createComment: async ({ projectId, iid, body, severity }) =>
+        projectCommentResult(
+          await adapter.createMergeRequestComment(projectId, iid, body, severity),
+          { repoId: projectId, mrIid: iid, severity },
+        ),
     }),
   });
 }

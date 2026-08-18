@@ -22,24 +22,12 @@ export function createProgram({ execute, io }) {
     .option('--timeout <duration>', '单次 HTTP 请求超时', DEFAULT_TIMEOUT);
 
   const config = program.command('config').description('管理 CodeHub 配置');
-  config
-    .command('init')
-    .description('创建用户配置文件')
-    .action(action('config.init', 0));
+  config.command('init').description('创建用户配置文件').action(action('config.init', 0));
 
   const auth = program.command('auth').description('管理 CodeHub 认证');
-  auth
-    .command('login')
-    .description('在交互式终端中登录')
-    .action(action('auth.login', 0));
-  auth
-    .command('status')
-    .description('查看本地认证状态')
-    .action(action('auth.status', 0));
-  auth
-    .command('logout')
-    .description('删除本地认证凭据')
-    .action(action('auth.logout', 0));
+  auth.command('login').description('在交互式终端中登录').action(action('auth.login', 0));
+  auth.command('status').description('查看本地认证状态').action(action('auth.status', 0));
+  auth.command('logout').description('删除本地认证凭据').action(action('auth.logout', 0));
 
   const repo = program.command('repo').description('查询 CodeHub Project');
   repo
@@ -54,20 +42,17 @@ export function createProgram({ execute, io }) {
     .action(action('repo.view', 1));
 
   const mr = program.command('mr').description('查询 Merge Request');
-  mr
-    .command('list')
+  mr.command('list')
     .description('列出 Project 中的 Merge Request')
     .addOption(projectOption())
     .option('--state <state>', 'open|closed|locked|merged|all', 'open')
     .action(action('mr.list', 0));
-  mr
-    .command('view')
+  mr.command('view')
     .description('查看 Merge Request 详情')
     .argument('<iid>', 'Project 内 MR IID', commanderPositiveId)
     .addOption(projectOption())
     .action(action('mr.view', 1));
-  mr
-    .command('commits')
+  mr.command('commits')
     .description('列出 Merge Request 包含的 Commit')
     .argument('<iid>', 'Project 内 MR IID', commanderPositiveId)
     .addOption(projectOption())
@@ -88,11 +73,7 @@ export function createProgram({ execute, io }) {
   function action(commandName, positionalCount) {
     return async (...parameters) => {
       const command = parameters.at(-1);
-      await execute(
-        commandName,
-        parameters.slice(0, positionalCount),
-        command.optsWithGlobals(),
-      );
+      await execute(commandName, parameters.slice(0, positionalCount), command.optsWithGlobals());
     };
   }
 }

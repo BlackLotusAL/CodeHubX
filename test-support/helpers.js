@@ -8,8 +8,12 @@ export function captureIo({
   return {
     capture,
     io: {
-      stdout: (value) => { capture.stdout += value; },
-      stderr: (value) => { capture.stderr += value; },
+      stdout: (value) => {
+        capture.stdout += value;
+      },
+      stderr: (value) => {
+        capture.stderr += value;
+      },
       stdoutIsTTY,
       stderrIsTTY,
       columns,

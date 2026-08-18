@@ -17,15 +17,15 @@ CodeHub CLI 面向 AI Agent、自动化脚本、CI 和内部开发者，封装 C
 
 ### 2.1 API 映射
 
-| API | 命令或流程 |
-| --- | --- |
-| DevUC 授权 | `codehub auth login`、DevUC token 自动刷新 |
-| Group Project 列表 | `codehub repo list <group-id>` |
-| Project 详情 | `codehub repo view <project-id>` |
-| Project MR 列表 | `codehub mr list --project-id <project-id>` |
-| MR 详情 | `codehub mr view <iid> --project-id <project-id>` |
-| MR Commit 列表 | `codehub mr commits <iid> --project-id <project-id>` |
-| 创建 MR 评论 | `codehub mr comment create <iid> --project-id <project-id>` |
+| API                | 命令或流程                                                  |
+| ------------------ | ----------------------------------------------------------- |
+| DevUC 授权         | `codehub auth login`、DevUC token 自动刷新                  |
+| Group Project 列表 | `codehub repo list <group-id>`                              |
+| Project 详情       | `codehub repo view <project-id>`                            |
+| Project MR 列表    | `codehub mr list --project-id <project-id>`                 |
+| MR 详情            | `codehub mr view <iid> --project-id <project-id>`           |
+| MR Commit 列表     | `codehub mr commits <iid> --project-id <project-id>`        |
+| 创建 MR 评论       | `codehub mr comment create <iid> --project-id <project-id>` |
 
 本地管理命令：
 
@@ -35,11 +35,11 @@ CodeHub CLI 面向 AI Agent、自动化脚本、CI 和内部开发者，封装 C
 
 ### 2.2 全局参数与输出约定
 
-~~~text
+```text
 --output <json|human>       输出格式，默认 json
 --timeout <duration>        单次 HTTP 请求超时，默认 30s
 --project-id <id>           指定 Merge Request 所属 Project
-~~~
+```
 
 约定：
 
@@ -63,7 +63,7 @@ codehub config init 在用户配置目录创建 codehub/config.json：
 
 API 调用使用以下配置路径：
 
-~~~json
+```json
 {
   "devuc": {
     "endpoint": "<DevUC 授权地址>",
@@ -74,7 +74,7 @@ API 调用使用以下配置路径：
     "appCode": "<CodeHub X-Apig-AppCode>"
   }
 }
-~~~
+```
 
 配置行为：
 
@@ -85,9 +85,9 @@ API 调用使用以下配置路径：
 
 ### 3.2 登录
 
-~~~bash
+```bash
 codehub auth login
-~~~
+```
 
 - 登录必须在带 TTY 的终端中执行。
 - CLI 提供 Private Token 和 DevUC 两种认证方式。
@@ -152,10 +152,10 @@ DevUC newToken 有效期为 24 小时。使用 DevUC 认证的业务命令在 to
 
 #### `codehub mr list`
 
-~~~bash
+```bash
 codehub mr list --project-id <project-id> \
   [--state open|closed|locked|merged|all]
-~~~
+```
 
 - state 默认为 open；CLI 将 open 映射为服务端参数 opened，其余值原样传递。
 - 非法状态返回 INVALID_ARGUMENT。
@@ -163,9 +163,9 @@ codehub mr list --project-id <project-id> \
 
 #### `codehub mr view`
 
-~~~bash
+```bash
 codehub mr view <iid> --project-id <project-id>
-~~~
+```
 
 - 调用单个 MR 详情 API。
 - 不隐式获取 Commit、diff 或评论。
@@ -173,9 +173,9 @@ codehub mr view <iid> --project-id <project-id>
 
 #### `codehub mr commits`
 
-~~~bash
+```bash
 codehub mr commits <iid> --project-id <project-id>
-~~~
+```
 
 - 调用 MR Commit 列表 API。
 - 不调用本地 Git。
@@ -183,12 +183,12 @@ codehub mr commits <iid> --project-id <project-id>
 
 ### 4.3 创建 MR 评论
 
-~~~bash
+```bash
 codehub mr comment create <iid> \
   --project-id <project-id> \
   --body <text> \
   [--severity suggestion|minor|major|fatal]
-~~~
+```
 
 - body 必填且不能为空，正文按参数原样传递，不做 trim、模板渲染或 Markdown 转换。
 - 只包含空格或换行的正文交给服务端判断。
@@ -214,24 +214,24 @@ codehub mr comment create <iid> \
 
 DevUC 授权请求：
 
-~~~text
+```text
 X-Apig-AppCode: <config.devuc.appCode>
 Content-Type: application/json
-~~~
+```
 
 CodeHub 请求：
 
-~~~text
+```text
 X-Apig-AppCode: <config.codehub.appCode>
 private-token: <token>
-~~~
+```
 
 或：
 
-~~~text
+```text
 X-Apig-AppCode: <config.codehub.appCode>
 X-Auth-token: <newToken>
-~~~
+```
 
 请求规则：
 
@@ -245,27 +245,27 @@ X-Auth-token: <newToken>
 
 失败时 stdout 为空，stderr 只输出一个错误对象：
 
-~~~json
+```json
 {
   "code": "HTTP_ERROR",
   "message": "CodeHub request failed.",
   "http_status": 403
 }
-~~~
+```
 
 错误对象包含 code、message，并仅在收到 HTTP 响应时包含 http_status。
 
 错误码：
 
-| code | 场景 |
-| --- | --- |
-| INVALID_ARGUMENT | 命令参数无效 |
-| CONFIG_ERROR | 配置不存在、无法解析或无法使用 |
-| AUTH_ERROR | 未登录、凭据操作失败、登录/刷新失败或 HTTP 401 |
-| HTTP_ERROR | 非 401 HTTP 失败或服务端响应无法使用 |
-| NETWORK_ERROR | 连接、TLS 或超时失败 |
-| WRITE_RESULT_UNKNOWN | 评论请求已发出但结果无法确认 |
-| CANCELLED | 用户取消 |
+| code                 | 场景                                           |
+| -------------------- | ---------------------------------------------- |
+| INVALID_ARGUMENT     | 命令参数无效                                   |
+| CONFIG_ERROR         | 配置不存在、无法解析或无法使用                 |
+| AUTH_ERROR           | 未登录、凭据操作失败、登录/刷新失败或 HTTP 401 |
+| HTTP_ERROR           | 非 401 HTTP 失败或服务端响应无法使用           |
+| NETWORK_ERROR        | 连接、TLS 或超时失败                           |
+| WRITE_RESULT_UNKNOWN | 评论请求已发出但结果无法确认                   |
+| CANCELLED            | 用户取消                                       |
 
 ### 6.2 Human 错误结果
 
@@ -277,14 +277,14 @@ X-Auth-token: <newToken>
 
 ### 6.3 退出码
 
-| 退出码 | 含义 |
-| --- | --- |
-| 0 | 成功 |
-| 2 | INVALID_ARGUMENT |
-| 3 | CONFIG_ERROR、AUTH_ERROR |
-| 4 | HTTP_ERROR |
-| 8 | NETWORK_ERROR、WRITE_RESULT_UNKNOWN |
-| 130 | CANCELLED |
+| 退出码 | 含义                                |
+| ------ | ----------------------------------- |
+| 0      | 成功                                |
+| 2      | INVALID_ARGUMENT                    |
+| 3      | CONFIG_ERROR、AUTH_ERROR            |
+| 4      | HTTP_ERROR                          |
+| 8      | NETWORK_ERROR、WRITE_RESULT_UNKNOWN |
+| 130    | CANCELLED                           |
 
 ## 7. 安全要求
 

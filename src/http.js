@@ -32,7 +32,8 @@ export async function requestJson({
 }) {
   const timeoutController = new AbortController();
   const combinedController = new AbortController();
-  const abortFromCaller = () => combinedController.abort(signal?.reason ?? new Error('USER_CANCELLED'));
+  const abortFromCaller = () =>
+    combinedController.abort(signal?.reason ?? new Error('USER_CANCELLED'));
   const abortFromTimeout = () => combinedController.abort(new Error('REQUEST_TIMEOUT'));
   const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
 

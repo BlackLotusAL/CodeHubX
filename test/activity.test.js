@@ -79,7 +79,10 @@ test('快速完成、失败和取消都通过 finally 清理 timer', async () =>
   assert.equal(fast.capture.stderr, '');
   assert.equal(fastClock.activeCount(), 0);
 
-  for (const error of [new Error('failed'), Object.assign(new Error('cancelled'), { name: 'AbortError' })]) {
+  for (const error of [
+    new Error('failed'),
+    Object.assign(new Error('cancelled'), { name: 'AbortError' }),
+  ]) {
     const clock = manualTimers();
     const { io, capture } = captureIo({ stdoutIsTTY: true, stderrIsTTY: true });
     const activity = createActivity({
@@ -88,10 +91,13 @@ test('快速完成、失败和取消都通过 finally 清理 timer', async () =>
       command: 'mr.comment.create',
       timers: clock.timers,
     });
-    await assert.rejects(activity.run(async () => {
-      clock.fireTimeout();
-      throw error;
-    }), error);
+    await assert.rejects(
+      activity.run(async () => {
+        clock.fireTimeout();
+        throw error;
+      }),
+      error,
+    );
     assert.match(capture.stderr, /正在创建评论…/);
     assert.match(capture.stderr, /\r +\r$/);
     assert.equal(clock.activeCount(), 0);
@@ -134,7 +140,9 @@ function manualTimers() {
       callback,
       active: true,
       unrefed: false,
-      unref() { this.unrefed = true; },
+      unref() {
+        this.unrefed = true;
+      },
     };
     handles.push(handle);
     return handle;
@@ -160,7 +168,8 @@ function manualTimers() {
     },
     fireTimeout: () => fire('timeout'),
     fireInterval: () => fire('interval'),
-    activeCount: (kind) => handles.filter((handle) => handle.active && (!kind || handle.kind === kind)).length,
+    activeCount: (kind) =>
+      handles.filter((handle) => handle.active && (!kind || handle.kind === kind)).length,
     createdCount: () => handles.length,
   };
 }

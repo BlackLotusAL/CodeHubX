@@ -7,19 +7,8 @@ export const AUTH_TYPES = Object.freeze({
 });
 
 export const OUTPUT_FORMATS = Object.freeze(['json', 'human']);
-export const MR_STATES = Object.freeze([
-  'open',
-  'closed',
-  'locked',
-  'merged',
-  'all',
-]);
-export const SEVERITIES = Object.freeze([
-  'suggestion',
-  'minor',
-  'major',
-  'fatal',
-]);
+export const MR_STATES = Object.freeze(['open', 'closed', 'locked', 'merged', 'all']);
+export const SEVERITIES = Object.freeze(['suggestion', 'minor', 'major', 'fatal']);
 
 export const DEFAULT_TIMEOUT = '30s';
 export const DEVUC_VALIDITY_MS = 24 * 60 * 60 * 1_000;

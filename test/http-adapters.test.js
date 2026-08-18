@@ -4,7 +4,12 @@ import { createCodehubAdapter } from '../src/codehub-adapter.js';
 import { createDevucClient } from '../src/devuc-client.js';
 import { requestJson, stripSensitiveHeaders } from '../src/http.js';
 import { devucCredential, privateCredential } from '../src/credentials.js';
-import { commentApiFixture, commitApiFixture, mergeRequestApiFixture, repoApiFixture } from '../test-support/fixtures.js';
+import {
+  commentApiFixture,
+  commitApiFixture,
+  mergeRequestApiFixture,
+  repoApiFixture,
+} from '../test-support/fixtures.js';
 import { jsonResponse } from '../test-support/helpers.js';
 
 const codehub = {
@@ -46,14 +51,17 @@ test('六组 CodeHub adapter 操作使用准确 method、URL、query、Header �
   await adapter.listMergeRequestCommits('34', '7');
   await adapter.createMergeRequestComment('34', '7', '原样正文\n$()', 'major');
 
-  assert.deepEqual(calls.map((call) => call.url), [
-    'https://codehub.test/api/v4/groups/12/projects',
-    'https://codehub.test/api/v4/projects/34',
-    'https://codehub.test/api/v4/projects/34/isource/merge_requests?state=opened',
-    'https://codehub.test/api/v4/projects/34/isource/merge_requests/7',
-    'https://codehub.test/api/v4/projects/34/merge_requests/7/commits',
-    'https://codehub.test/api/v4/projects/34/merge_requests/7/discussions',
-  ]);
+  assert.deepEqual(
+    calls.map((call) => call.url),
+    [
+      'https://codehub.test/api/v4/groups/12/projects',
+      'https://codehub.test/api/v4/projects/34',
+      'https://codehub.test/api/v4/projects/34/isource/merge_requests?state=opened',
+      'https://codehub.test/api/v4/projects/34/isource/merge_requests/7',
+      'https://codehub.test/api/v4/projects/34/merge_requests/7/commits',
+      'https://codehub.test/api/v4/projects/34/merge_requests/7/discussions',
+    ],
+  );
   for (const call of calls.slice(0, -1)) {
     assert.equal(call.options.method, 'GET');
     assert.deepEqual(call.options.headers, {
@@ -107,7 +115,9 @@ test('DevUC 缺少 newToken、HTTP 或网络失败统一返回 AUTH_ERROR', asyn
   for (const fetchImpl of [
     async () => jsonResponse(200, { status: 'ok', result: {} }),
     async () => jsonResponse(403, { error: true }),
-    async () => { throw Object.assign(new Error('offline'), { code: 'ENOTFOUND' }); },
+    async () => {
+      throw Object.assign(new Error('offline'), { code: 'ENOTFOUND' });
+    },
   ]) {
     const client = createDevucClient({ devuc, timeoutMs: 1_000, fetchImpl });
     await assert.rejects(client.login('Agent1', 'password'), { code: 'AUTH_ERROR' });
@@ -148,8 +158,10 @@ test('GET 跨 origin 重定向移除所有敏感 Header，同 origin 保留', as
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url: String(url), headers: options.headers });
-    if (calls.length === 1) return new Response('', { status: 302, headers: { location: '/next' } });
-    if (calls.length === 2) return new Response('', { status: 302, headers: { location: 'https://other.test/final' } });
+    if (calls.length === 1)
+      return new Response('', { status: 302, headers: { location: '/next' } });
+    if (calls.length === 2)
+      return new Response('', { status: 302, headers: { location: 'https://other.test/final' } });
     return jsonResponse(200, { ok: true });
   };
   await requestJson({
@@ -231,7 +243,9 @@ test('评论发送前确定失败为 NETWORK_ERROR，其他网络/超时为 WRIT
         method: 'POST',
         timeoutMs: 100,
         isCommentWrite: true,
-        fetchImpl: async () => { throw Object.assign(new Error(code), { code }); },
+        fetchImpl: async () => {
+          throw Object.assign(new Error(code), { code });
+        },
       }),
       { code: 'NETWORK_ERROR' },
     );
@@ -243,7 +257,9 @@ test('评论发送前确定失败为 NETWORK_ERROR，其他网络/超时为 WRIT
       method: 'POST',
       timeoutMs: 100,
       isCommentWrite: true,
-      fetchImpl: async () => { throw Object.assign(new Error('reset'), { code: 'ECONNRESET' }); },
+      fetchImpl: async () => {
+        throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+      },
     }),
     { code: 'WRITE_RESULT_UNKNOWN' },
   );
@@ -254,9 +270,14 @@ test('评论发送前确定失败为 NETWORK_ERROR，其他网络/超时为 WRIT
       method: 'POST',
       timeoutMs: 5,
       isCommentWrite: true,
-      fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
-        signal.addEventListener('abort', () => reject(Object.assign(new Error('abort'), { name: 'AbortError' })), { once: true });
-      }),
+      fetchImpl: async (_url, { signal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('abort'), { name: 'AbortError' })),
+            { once: true },
+          );
+        }),
     }),
     { code: 'WRITE_RESULT_UNKNOWN' },
   );
@@ -273,7 +294,9 @@ test('评论响应流中断为结果未知，完整非 JSON 响应为 HTTP_ERROR
         status: 200,
         ok: true,
         headers: new Headers(),
-        text: async () => { throw new Error('socket closed'); },
+        text: async () => {
+          throw new Error('socket closed');
+        },
       }),
     }),
     { code: 'WRITE_RESULT_UNKNOWN' },
@@ -297,21 +320,29 @@ test('调用方取消请求返回 CANCELLED', async () => {
     url: 'https://code.test/value',
     timeoutMs: 1_000,
     signal: controller.signal,
-    fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
-      signal.addEventListener('abort', () => reject(Object.assign(new Error('abort'), { name: 'AbortError' })), { once: true });
-    }),
+    fetchImpl: async (_url, { signal }) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => reject(Object.assign(new Error('abort'), { name: 'AbortError' })),
+          { once: true },
+        );
+      }),
   });
   controller.abort();
   await assert.rejects(promise, { code: 'CANCELLED' });
 });
 
 test('stripSensitiveHeaders 大小写不敏感且保留普通 Header', () => {
-  assert.deepEqual(stripSensitiveHeaders({
-    'PRIVATE-TOKEN': 'a',
-    'x-auth-token': 'b',
-    'X-APIG-APPCODE': 'c',
-    authorization: 'd',
-    COOKIE: 'e',
-    Accept: 'application/json',
-  }), { Accept: 'application/json' });
+  assert.deepEqual(
+    stripSensitiveHeaders({
+      'PRIVATE-TOKEN': 'a',
+      'x-auth-token': 'b',
+      'X-APIG-APPCODE': 'c',
+      authorization: 'd',
+      COOKIE: 'e',
+      Accept: 'application/json',
+    }),
+    { Accept: 'application/json' },
+  );
 });

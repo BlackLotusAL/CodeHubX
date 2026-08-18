@@ -2,11 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import stringWidth from 'string-width';
 import { CliError } from '../src/errors.js';
-import {
-  renderHuman,
-  writeFailure,
-  writeSuccess,
-} from '../src/output.js';
+import { renderHuman, writeFailure, writeSuccess } from '../src/output.js';
 import { captureIo, parseSingleJson } from '../test-support/helpers.js';
 
 const repo = {
@@ -40,7 +36,7 @@ test('JSON 成功结果为直接值、两空格缩进、单换行且无 ANSI', (
   const { io, capture } = captureIo({ stdoutIsTTY: true });
   writeSuccess(io, 'json', 'repo.list', [repo]);
   assert.deepEqual(parseSingleJson(capture.stdout), [repo]);
-  assert.match(capture.stdout, /\n  \{/);
+  assert.match(capture.stdout, /\n {2}\{/);
   assert.doesNotMatch(capture.stdout, /\u001B\[/);
   assert.equal(capture.stderr, '');
 });
@@ -85,7 +81,7 @@ test('repo human 输出对齐 SSH/HTTPS 并适配窄终端', () => {
   });
   const lines = output.split('\n');
   assert.equal(lines[0], '共 1 个仓库');
-  assert.match(output, /● 9001  平台\/中文仓库🚀/);
+  assert.match(output, /● 9001 {2}平台\/中文仓库🚀/);
   assert.match(output, /active · 更新 11 天前/);
   const ssh = lines.find((line) => line.includes('SSH'));
   const https = lines.find((line) => line.includes('HTTPS'));
@@ -100,7 +96,7 @@ test('MR 列表按显示宽度处理中文与 Emoji 并显示分支', () => {
     now: Date.parse('2026-08-12T00:00:00Z'),
   });
   assert.match(output, /^共 1 个 Merge Request/);
-  assert.match(output, /● !17  修复中文对齐 🚀/);
+  assert.match(output, /● !17 {2}修复中文对齐 🚀/);
   assert.match(output, /opened · 林开发者 · 1 天前/);
   assert.match(output, /fix\/terminal-output → main/);
 });
@@ -145,18 +141,24 @@ test('详情时间转换为 RFC 3339 UTC 且长描述换行', () => {
 });
 
 test('Commit human 显示父 SHA、作者、提交者和不同的完整消息', () => {
-  const output = renderHuman('mr.commits', [{
-    sha: '0123456789abcdef',
-    title: 'fix: title',
-    message: 'fix: title\n\nbody',
-    author: { name: 'Author', email: 'author@test' },
-    committer: { name: 'Bot', email: 'bot@test' },
-    authored_at: '2026-08-01T00:00:00Z',
-    committed_at: '2026-08-01T00:00:00Z',
-    parent_shas: ['fedcba9876543210'],
-  }], { io: { columns: 80, env: {}, stdoutIsTTY: false } });
+  const output = renderHuman(
+    'mr.commits',
+    [
+      {
+        sha: '0123456789abcdef',
+        title: 'fix: title',
+        message: 'fix: title\n\nbody',
+        author: { name: 'Author', email: 'author@test' },
+        committer: { name: 'Bot', email: 'bot@test' },
+        authored_at: '2026-08-01T00:00:00Z',
+        committed_at: '2026-08-01T00:00:00Z',
+        parent_shas: ['fedcba9876543210'],
+      },
+    ],
+    { io: { columns: 80, env: {}, stdoutIsTTY: false } },
+  );
   assert.match(output, /^共 1 个 Commit/);
-  assert.match(output, /^● 0123456789ab  fix: title/m);
+  assert.match(output, /^● 0123456789ab {2}fix: title/m);
   assert.match(output, /父 SHA fedcba9876543210/);
   assert.match(output, /Author <author@test>/);
   assert.match(output, /body/);
@@ -189,11 +191,15 @@ test('本地和认证 human 输出不泄漏配置字段', () => {
     '! 配置文件已存在，未覆盖\n  路径  /config.json',
   );
   assert.doesNotMatch(
-    renderHuman('auth.status', {
-      configured: true,
-      authentication_type: 'devuc',
-      api_host: 'https://code.test',
-    }, { io }),
+    renderHuman(
+      'auth.status',
+      {
+        configured: true,
+        authentication_type: 'devuc',
+        api_host: 'https://code.test',
+      },
+      { io },
+    ),
     /token|password|AppCode/i,
   );
 });
@@ -210,13 +216,17 @@ test('卡片主题按语义区分标题、标识、链接、状态、标签和�
   assert.match(repository, /\u001B\[36;4mhttps:\/\/code\.test/);
   assert.match(repository, /\u001B\[2m更新 11 天前\u001B\[0m/);
 
-  const detail = renderHuman('mr.view', {
-    ...mr,
-    labels: ['cli', 'review-ready'],
-    created_at: '2026-08-01T00:00:00Z',
-    changes: { files: 2, additions: 8, deletions: 3 },
-    description: '描述',
-  }, { io });
+  const detail = renderHuman(
+    'mr.view',
+    {
+      ...mr,
+      labels: ['cli', 'review-ready'],
+      created_at: '2026-08-01T00:00:00Z',
+      changes: { files: 2, additions: 8, deletions: 3 },
+      description: '描述',
+    },
+    { io },
+  );
   assert.match(detail, /\u001B\[32mopened\u001B\[0m/);
   assert.match(detail, /\u001B\[35m\[cli\]\u001B\[0m/);
   assert.match(detail, /\u001B\[32m\+8\u001B\[0m/);
@@ -232,9 +242,18 @@ test('评论严重级别与 human 错误使用独立语义色和图标', () => {
     ['major', '35'],
     ['fatal', '31'],
   ]) {
-    const output = renderHuman('mr.comment.create', {
-      comment_id: '7', repo_id: '1', mr_iid: '2', severity, resolved: false, web_url: null,
-    }, { io });
+    const output = renderHuman(
+      'mr.comment.create',
+      {
+        comment_id: '7',
+        repo_id: '1',
+        mr_iid: '2',
+        severity,
+        resolved: false,
+        web_url: null,
+      },
+      { io },
+    );
     assert.match(output, new RegExp(`\\u001B\\[${code}m${severity}\\u001B\\[0m`));
   }
 
@@ -247,7 +266,10 @@ test('评论严重级别与 human 错误使用独立语义色和图标', () => {
     writeFailure(errorIo, 'human', error);
     assert.match(capture.stderr, new RegExp(`\\u001B\\[${iconCode}m`));
     assert.match(capture.stderr, new RegExp(`\\u001B\\[${codeStyle}m\\[${error.code}\\]`));
-    assert.match(capture.stderr.replace(ANSI_STYLE_PATTERN, ''), new RegExp(`^[✓●○!✗] \\[${error.code}\\]`));
+    assert.match(
+      capture.stderr.replace(ANSI_STYLE_PATTERN, ''),
+      new RegExp(`^[✓●○!✗] \\[${error.code}\\]`),
+    );
   }
 });
 
@@ -255,20 +277,60 @@ test('所有 public human 结果在无色模式仍保留文字和图标', () => 
   const io = { columns: 100, env: { NO_COLOR: '' }, stdoutIsTTY: true };
   const samples = [
     ['config.init', { created: true, config_path: '/config.json' }, /^✓ 已创建配置文件/],
-    ['auth.login', { configured: true, authentication_type: 'private_token', api_host: 'https://code.test' }, /^✓ 认证已配置/],
-    ['auth.status', { configured: false, authentication_type: null, api_host: 'https://code.test' }, /^○ 未登录/],
-    ['auth.logout', { credential_helper_cleared: true, api_host: 'https://code.test' }, /^✓ 本地认证凭据已清除/],
+    [
+      'auth.login',
+      { configured: true, authentication_type: 'private_token', api_host: 'https://code.test' },
+      /^✓ 认证已配置/,
+    ],
+    [
+      'auth.status',
+      { configured: false, authentication_type: null, api_host: 'https://code.test' },
+      /^○ 未登录/,
+    ],
+    [
+      'auth.logout',
+      { credential_helper_cleared: true, api_host: 'https://code.test' },
+      /^✓ 本地认证凭据已清除/,
+    ],
     ['repo.list', [repo], /^共 1 个仓库/],
-    ['repo.view', { ...repo, default_branch: 'main', web_url: 'https://code.test/repo' }, /^● Project 9001/],
+    [
+      'repo.view',
+      { ...repo, default_branch: 'main', web_url: 'https://code.test/repo' },
+      /^● Project 9001/,
+    ],
     ['mr.list', [mr], /^共 1 个 Merge Request/],
-    ['mr.view', { ...mr, labels: null, created_at: null, changes: null, description: null }, /^● !17/],
-    ['mr.commits', [{
-      sha: 'abcdef1234567890', title: 'feat: card', message: 'feat: card',
-      author: null, committer: null, committed_at: null, parent_shas: [],
-    }], /^共 1 个 Commit/],
-    ['mr.comment.create', {
-      comment_id: '7', repo_id: '9001', mr_iid: '17', severity: 'suggestion', resolved: false, web_url: null,
-    }, /^✓ 评论已创建/],
+    [
+      'mr.view',
+      { ...mr, labels: null, created_at: null, changes: null, description: null },
+      /^● !17/,
+    ],
+    [
+      'mr.commits',
+      [
+        {
+          sha: 'abcdef1234567890',
+          title: 'feat: card',
+          message: 'feat: card',
+          author: null,
+          committer: null,
+          committed_at: null,
+          parent_shas: [],
+        },
+      ],
+      /^共 1 个 Commit/,
+    ],
+    [
+      'mr.comment.create',
+      {
+        comment_id: '7',
+        repo_id: '9001',
+        mr_iid: '17',
+        severity: 'suggestion',
+        resolved: false,
+        web_url: null,
+      },
+      /^✓ 评论已创建/,
+    ],
   ];
 
   for (const [command, data, marker] of samples) {
@@ -280,17 +342,23 @@ test('所有 public human 结果在无色模式仍保留文字和图标', () => 
 
 test('卡片在 40、80、240 列下保持 ANSI-aware 宽度并过滤上游控制符', () => {
   for (const columns of [40, 80, 240]) {
-    const output = renderHuman('repo.list', [{
-      ...repo,
-      full_name: `平台/\u001B[31m恶意\u001B[0m/很长很长的中文仓库🚀-${'x'.repeat(120)}\u0001`,
-      clone_urls: {
-        ssh: `ssh://git@code.test/${'segment/'.repeat(30)}repository.git`,
-        https: `https://code.test/${'segment/'.repeat(30)}repository.git`,
+    const output = renderHuman(
+      'repo.list',
+      [
+        {
+          ...repo,
+          full_name: `平台/\u001B[31m恶意\u001B[0m/很长很长的中文仓库🚀-${'x'.repeat(120)}\u0001`,
+          clone_urls: {
+            ssh: `ssh://git@code.test/${'segment/'.repeat(30)}repository.git`,
+            https: `https://code.test/${'segment/'.repeat(30)}repository.git`,
+          },
+        },
+      ],
+      {
+        io: { columns, env: { CLICOLOR_FORCE: '1' }, stdoutIsTTY: false },
+        now: Date.parse('2026-08-12T00:00:00Z'),
       },
-    }], {
-      io: { columns, env: { CLICOLOR_FORCE: '1' }, stdoutIsTTY: false },
-      now: Date.parse('2026-08-12T00:00:00Z'),
-    });
+    );
     assert.doesNotMatch(output, /\u001B\[31m/);
     assert.match(output, /恶意/);
     assert.match(output, /�/);

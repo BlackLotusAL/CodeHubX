@@ -145,13 +145,17 @@ test('命令使用配置时才校验 URL 与 AppCode', () => {
 test('配置存储 I/O 失败统一返回 CONFIG_ERROR', async () => {
   const initStore = createConfigStore({
     path: '/virtual/config.json',
-    makeDirectory: async () => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); },
+    makeDirectory: async () => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    },
   });
   await assert.rejects(initStore.init(), { code: 'CONFIG_ERROR' });
 
   const loadStore = createConfigStore({
     path: '/virtual/config.json',
-    read: async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+    read: async () => {
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
   });
   await assert.rejects(loadStore.load(), { code: 'CONFIG_ERROR' });
 });

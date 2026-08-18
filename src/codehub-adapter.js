@@ -2,13 +2,7 @@ import { AUTH_TYPES } from './constants.js';
 import { CliError } from './errors.js';
 import { requestJson } from './http.js';
 
-export function createCodehubAdapter({
-  codehub,
-  credential,
-  timeoutMs,
-  fetchImpl,
-  signal,
-} = {}) {
+export function createCodehubAdapter({ codehub, credential, timeoutMs, fetchImpl, signal } = {}) {
   const common = { timeoutMs, fetchImpl, signal };
   const authenticationHeaders = createAuthenticationHeaders();
 

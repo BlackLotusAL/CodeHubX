@@ -5,12 +5,7 @@ import { createConfigStore } from './config.js';
 import { KeyringCredentialStore } from './credentials.js';
 import { CliError, toCliError } from './errors.js';
 import { createDevucClient } from './devuc-client.js';
-import {
-  createActivity,
-  createProcessIo,
-  writeFailure,
-  writeSuccess,
-} from './output.js';
+import { createActivity, createProcessIo, writeFailure, writeSuccess } from './output.js';
 import { createInteractivePrompter } from './prompts.js';
 import { createProgram } from './program.js';
 import {
@@ -56,21 +51,21 @@ export async function runCli(argv, dependencies = {}) {
         credentialStore,
         prompter,
         devucClientFactory,
-        codehubOperationsFactory: (options) => operationsFactory(
-          codehubAdapterFactory(options),
-        ),
+        codehubOperationsFactory: (options) => operationsFactory(codehubAdapterFactory(options)),
         timeoutMs,
         fetchImpl: dependencies.fetchImpl,
         now,
         signal,
       });
-      const data = await activity.run(() => executeCommand({
-        command,
-        positionals,
-        options: rawOptions,
-        configStore,
-        authentication,
-      }));
+      const data = await activity.run(() =>
+        executeCommand({
+          command,
+          positionals,
+          options: rawOptions,
+          configStore,
+          authentication,
+        }),
+      );
       writeSuccess(io, selectedFormat, command, data, {
         now,
       });

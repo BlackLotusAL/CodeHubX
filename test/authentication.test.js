@@ -1,15 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAuthenticationSession } from '../src/authentication.js';
-import {
-  DEVUC_REFRESH_LEEWAY_MS,
-  DEVUC_VALIDITY_MS,
-} from '../src/constants.js';
-import {
-  MemoryCredentialStore,
-  devucCredential,
-  privateCredential,
-} from '../src/credentials.js';
+import { DEVUC_REFRESH_LEEWAY_MS, DEVUC_VALIDITY_MS } from '../src/constants.js';
+import { MemoryCredentialStore, devucCredential, privateCredential } from '../src/credentials.js';
 import { CliError } from '../src/errors.js';
 import { configStore, validConfig } from '../test-support/helpers.js';
 
@@ -25,8 +18,12 @@ test('认证会话通过一个 interface 完成登录、状态和幂等退出', 
       chooseAuthenticationType: async () => 'private_token',
       readPrivateToken: async () => 'private-secret',
     },
-    devucClientFactory: () => { networkCalls += 1; },
-    codehubOperationsFactory: () => { networkCalls += 1; },
+    devucClientFactory: () => {
+      networkCalls += 1;
+    },
+    codehubOperationsFactory: () => {
+      networkCalls += 1;
+    },
   });
 
   assert.deepEqual(await session.login(), {
@@ -80,22 +77,30 @@ test('认证会话隐藏 DevUC 登录细节并保存刷新所需凭据', async (
   });
   assert.equal(calls[0].options.timeoutMs, 120_000);
   assert.equal(calls[0].options.devuc.endpoint, 'https://devuc.test/v2/w3tokens');
-  assert.deepEqual(await store.get(ORIGIN), devucCredential({
-    account: 'Agent01',
-    password: 'password-secret',
-    token: 'new-token-secret',
-    issuedAtMs: issuedAt,
-  }));
+  assert.deepEqual(
+    await store.get(ORIGIN),
+    devucCredential({
+      account: 'Agent01',
+      password: 'password-secret',
+      token: 'new-token-secret',
+      issuedAtMs: issuedAt,
+    }),
+  );
 });
 
 test('认证会话在刷新阈值前直接形成已认证 CodeHub 能力', async () => {
   const issuedAt = 1_000;
-  const store = new MemoryCredentialStore([[ORIGIN, devucCredential({
-    account: 'Agent1',
-    password: 'password',
-    token: 'old-token',
-    issuedAtMs: issuedAt,
-  })]]);
+  const store = new MemoryCredentialStore([
+    [
+      ORIGIN,
+      devucCredential({
+        account: 'Agent1',
+        password: 'password',
+        token: 'old-token',
+        issuedAtMs: issuedAt,
+      }),
+    ],
+  ]);
   const contexts = [];
   const capability = { listProjects: async () => [] };
   const session = createAuthenticationSession({
@@ -123,12 +128,17 @@ test('认证会话在精确阈值先刷新并保存，再形成 CodeHub 能力',
       return super.save(origin, credential);
     }
   }
-  const store = new TrackingStore([[ORIGIN, devucCredential({
-    account: 'Agent1',
-    password: 'password',
-    token: 'old-token',
-    issuedAtMs: issuedAt,
-  })]]);
+  const store = new TrackingStore([
+    [
+      ORIGIN,
+      devucCredential({
+        account: 'Agent1',
+        password: 'password',
+        token: 'old-token',
+        issuedAtMs: issuedAt,
+      }),
+    ],
+  ]);
   const capability = { listProjects: async () => [] };
   const session = createAuthenticationSession({
     configStore: configStore(),
@@ -156,23 +166,33 @@ test('认证会话在缺少凭据、刷新失败或保存失败时不形成 Code
   const emptySession = createAuthenticationSession({
     configStore: configStore(),
     credentialStore: new MemoryCredentialStore(),
-    codehubOperationsFactory: () => { capabilityCalls += 1; },
+    codehubOperationsFactory: () => {
+      capabilityCalls += 1;
+    },
   });
   await assert.rejects(emptySession.codehub(), { code: 'AUTH_ERROR' });
 
   for (const mode of ['refresh', 'save']) {
-    const base = new MemoryCredentialStore([[ORIGIN, devucCredential({
-      account: 'Agent1',
-      password: 'password',
-      token: 'old-token',
-      issuedAtMs: 0,
-    })]]);
-    const store = mode === 'save'
-      ? {
-          get: (...args) => base.get(...args),
-          save: async () => { throw new CliError('AUTH_ERROR'); },
-        }
-      : base;
+    const base = new MemoryCredentialStore([
+      [
+        ORIGIN,
+        devucCredential({
+          account: 'Agent1',
+          password: 'password',
+          token: 'old-token',
+          issuedAtMs: 0,
+        }),
+      ],
+    ]);
+    const store =
+      mode === 'save'
+        ? {
+            get: (...args) => base.get(...args),
+            save: async () => {
+              throw new CliError('AUTH_ERROR');
+            },
+          }
+        : base;
     const session = createAuthenticationSession({
       configStore: configStore(),
       credentialStore: store,

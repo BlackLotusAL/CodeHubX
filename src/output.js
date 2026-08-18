@@ -16,7 +16,8 @@ const ACTIVITY_MESSAGES = Object.freeze({
   'mr.commits': '正在获取 Commit 列表…',
   'mr.comment.create': '正在创建评论…',
 });
-const ANSI_PATTERN = /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+const ANSI_PATTERN =
+  /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 const JSON_TERMINAL_CONTROL_PATTERN = /[\u007F-\u009F]/g;
 
 export function createProcessIo({
@@ -60,12 +61,7 @@ export function createActivity({
   timers = globalThis,
 } = {}) {
   const message = ACTIVITY_MESSAGES[command];
-  const enabled = Boolean(
-    message &&
-    format === 'human' &&
-    io?.stdoutIsTTY &&
-    io?.stderrIsTTY,
-  );
+  const enabled = Boolean(message && format === 'human' && io?.stdoutIsTTY && io?.stderrIsTTY);
   const theme = createTheme(shouldUseColor(io?.env ?? {}, Boolean(io?.stderrIsTTY)));
   let delayTimer = null;
   let frameTimer = null;
@@ -132,23 +128,42 @@ export function renderHuman(command, data, { io, now = Date.now } = {}) {
     case 'config.init':
       return renderConfigInit(data, context);
     case 'auth.login':
-      return statusCard('success', '认证已配置', [
-        ['认证方式', styledValue(authTypeName(data.authentication_type), theme.accent, context)],
-        ['API 地址', linkValue(data.api_host, context)],
-      ], context);
+      return statusCard(
+        'success',
+        '认证已配置',
+        [
+          ['认证方式', styledValue(authTypeName(data.authentication_type), theme.accent, context)],
+          ['API 地址', linkValue(data.api_host, context)],
+        ],
+        context,
+      );
     case 'auth.status':
       return data.configured
-        ? statusCard('success', '已登录', [
-            ['认证方式', styledValue(authTypeName(data.authentication_type), theme.accent, context)],
-            ['API 地址', linkValue(data.api_host, context)],
-          ], context)
-        : statusCard('neutral', '未登录', [
-            ['API 地址', linkValue(data.api_host, context)],
-          ], context);
+        ? statusCard(
+            'success',
+            '已登录',
+            [
+              [
+                '认证方式',
+                styledValue(authTypeName(data.authentication_type), theme.accent, context),
+              ],
+              ['API 地址', linkValue(data.api_host, context)],
+            ],
+            context,
+          )
+        : statusCard(
+            'neutral',
+            '未登录',
+            [['API 地址', linkValue(data.api_host, context)]],
+            context,
+          );
     case 'auth.logout':
-      return statusCard('success', '本地认证凭据已清除', [
-        ['API 地址', linkValue(data.api_host, context)],
-      ], context);
+      return statusCard(
+        'success',
+        '本地认证凭据已清除',
+        [['API 地址', linkValue(data.api_host, context)]],
+        context,
+      );
     case 'repo.list':
       return renderRepoList(data, context);
     case 'repo.view':
@@ -168,12 +183,18 @@ export function renderHuman(command, data, { io, now = Date.now } = {}) {
 
 function renderConfigInit(data, context) {
   return data.created
-    ? statusCard('success', '已创建配置文件', [
-        ['路径', styledValue(data.config_path, context.theme.accent, context)],
-      ], context)
-    : statusCard('warning', '配置文件已存在，未覆盖', [
-        ['路径', styledValue(data.config_path, context.theme.accent, context)],
-      ], context);
+    ? statusCard(
+        'success',
+        '已创建配置文件',
+        [['路径', styledValue(data.config_path, context.theme.accent, context)]],
+        context,
+      )
+    : statusCard(
+        'warning',
+        '配置文件已存在，未覆盖',
+        [['路径', styledValue(data.config_path, context.theme.accent, context)]],
+        context,
+      );
 }
 
 function renderRepoList(repositories, context) {
@@ -191,16 +212,24 @@ function renderRepoCard(repository, context) {
     prefix,
     ' '.repeat(stringWidth(prefix)),
   );
-  lines.push(...wrapRendered(
-    `${status.text}${separator(context)}${context.theme.muted(`更新 ${relativeTime(repository.updated_at, context.now)}`)}`,
-    context.columns,
-    '  ',
-    '  ',
-  ));
-  lines.push(...urlRows([
-    ['SSH', repository.clone_urls?.ssh],
-    ['HTTPS', repository.clone_urls?.https],
-  ], context, { skipMissing: true }));
+  lines.push(
+    ...wrapRendered(
+      `${status.text}${separator(context)}${context.theme.muted(`更新 ${relativeTime(repository.updated_at, context.now)}`)}`,
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...urlRows(
+      [
+        ['SSH', repository.clone_urls?.ssh],
+        ['HTTPS', repository.clone_urls?.https],
+      ],
+      context,
+      { skipMissing: true },
+    ),
+  );
   return lines.join('\n');
 }
 
@@ -213,26 +242,35 @@ function renderRepoView(repository, context) {
     prefix,
     ' '.repeat(stringWidth(prefix)),
   );
-  lines.push(...wrapRendered(
-    [
-      status.text,
-      `${context.theme.muted('默认分支')} ${styledValue(repository.default_branch, context.theme.accent, context)}`,
-    ].join(separator(context)),
-    context.columns,
-    '  ',
-    '  ',
-  ));
-  lines.push(...wrapRendered(
-    `${context.theme.muted('更新')} ${context.theme.muted(detailTime(repository.updated_at))}`,
-    context.columns,
-    '  ',
-    '  ',
-  ));
-  lines.push(...urlRows([
-    ['SSH', repository.clone_urls?.ssh],
-    ['HTTPS', repository.clone_urls?.https],
-    ['Web', repository.web_url],
-  ], context));
+  lines.push(
+    ...wrapRendered(
+      [
+        status.text,
+        `${context.theme.muted('默认分支')} ${styledValue(repository.default_branch, context.theme.accent, context)}`,
+      ].join(separator(context)),
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...wrapRendered(
+      `${context.theme.muted('更新')} ${context.theme.muted(detailTime(repository.updated_at))}`,
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...urlRows(
+      [
+        ['SSH', repository.clone_urls?.ssh],
+        ['HTTPS', repository.clone_urls?.https],
+        ['Web', repository.web_url],
+      ],
+      context,
+    ),
+  );
   return lines.join('\n');
 }
 
@@ -256,7 +294,14 @@ function renderMrCard(mr, context) {
   metadata.push(styledValue(authorName(mr.author), context.theme.plain, context));
   metadata.push(context.theme.muted(relativeTime(mr.updated_at, context.now)));
   lines.push(...wrapRendered(metadata.join(separator(context)), context.columns, '  ', '  '));
-  lines.push(...wrapRendered(branchText(mr.source_branch, mr.target_branch, context), context.columns, '  ', '  '));
+  lines.push(
+    ...wrapRendered(
+      branchText(mr.source_branch, mr.target_branch, context),
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
   return lines.join('\n');
 }
 
@@ -269,39 +314,65 @@ function renderMrView(mr, context) {
     prefix,
     ' '.repeat(stringWidth(prefix)),
   );
-  lines.push(...wrapRendered([
-    `${context.theme.muted('Project')} ${styledValue(mr.repo_id, context.theme.accent, context)}`,
-    `${context.theme.muted('MR')} ${styledValue(mr.mr_id, context.theme.accent, context)}`,
-    `${context.theme.muted('作者')} ${styledValue(authorName(mr.author), context.theme.plain, context)}`,
-  ].join(separator(context)), context.columns, '  ', '  '));
-  lines.push(...wrapRendered([
-    `${context.theme.muted('状态')} ${status.text}`,
-    draftText(mr.is_draft, context),
-  ].join(separator(context)), context.columns, '  ', '  '));
-  lines.push(...wrapRendered(
-    `${context.theme.muted('分支')} ${branchText(mr.source_branch, mr.target_branch, context)}`,
-    context.columns,
-    '  ',
-    '  ',
-  ));
-  lines.push(...wrapRendered(
-    `${context.theme.muted('创建')} ${context.theme.muted(detailTime(mr.created_at))}`,
-    context.columns,
-    '  ',
-    '  ',
-  ));
-  lines.push(...wrapRendered(
-    `${context.theme.muted('更新')} ${context.theme.muted(detailTime(mr.updated_at))}`,
-    context.columns,
-    '  ',
-    '  ',
-  ));
+  lines.push(
+    ...wrapRendered(
+      [
+        `${context.theme.muted('Project')} ${styledValue(mr.repo_id, context.theme.accent, context)}`,
+        `${context.theme.muted('MR')} ${styledValue(mr.mr_id, context.theme.accent, context)}`,
+        `${context.theme.muted('作者')} ${styledValue(authorName(mr.author), context.theme.plain, context)}`,
+      ].join(separator(context)),
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...wrapRendered(
+      [`${context.theme.muted('状态')} ${status.text}`, draftText(mr.is_draft, context)].join(
+        separator(context),
+      ),
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...wrapRendered(
+      `${context.theme.muted('分支')} ${branchText(mr.source_branch, mr.target_branch, context)}`,
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...wrapRendered(
+      `${context.theme.muted('创建')} ${context.theme.muted(detailTime(mr.created_at))}`,
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
+  lines.push(
+    ...wrapRendered(
+      `${context.theme.muted('更新')} ${context.theme.muted(detailTime(mr.updated_at))}`,
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
   lines.push(...wrapRendered(labelText(mr.labels, context), context.columns, '  ', '  '));
 
   lines.push('', context.theme.title('变更'));
   lines.push(...wrapRendered(changesText(mr.changes, context), context.columns, '  ', '  '));
   lines.push('', context.theme.title('描述'));
-  lines.push(...wrapRendered(styledValue(mr.description, context.theme.plain, context), context.columns, '  ', '  '));
+  lines.push(
+    ...wrapRendered(
+      styledValue(mr.description, context.theme.plain, context),
+      context.columns,
+      '  ',
+      '  ',
+    ),
+  );
   lines.push('', ...urlRows([['Web', mr.web_url]], context));
   return lines.join('\n');
 }
@@ -322,38 +393,54 @@ function renderCommitCard(commit, context) {
     prefix,
     ' '.repeat(stringWidth(prefix)),
   );
-  lines.push(...wrapRendered([
-    `${context.theme.muted('作者')} ${styledValue(personName(commit.author), context.theme.plain, context)}`,
-    `${context.theme.muted('提交者')} ${styledValue(personName(commit.committer), context.theme.plain, context)}`,
-    context.theme.muted(detailTime(commit.committed_at)),
-  ].join(separator(context)), context.columns, '  ', '  '));
-  const parents = commit.parent_shas?.length ? commit.parent_shas.join(', ') : null;
-  lines.push(...wrapRendered(
-    `${context.theme.muted('父 SHA')} ${styledValue(parents, context.theme.accent, context)}`,
-    context.columns,
-    '  ',
-    '    ',
-  ));
-  if (commit.message && commit.message !== commit.title) {
-    lines.push(...wrapRendered(
-      styledValue(commit.message, context.theme.plain, context),
+  lines.push(
+    ...wrapRendered(
+      [
+        `${context.theme.muted('作者')} ${styledValue(personName(commit.author), context.theme.plain, context)}`,
+        `${context.theme.muted('提交者')} ${styledValue(personName(commit.committer), context.theme.plain, context)}`,
+        context.theme.muted(detailTime(commit.committed_at)),
+      ].join(separator(context)),
       context.columns,
-      `${context.theme.muted('  消息')}  `,
-      '        ',
-    ));
+      '  ',
+      '  ',
+    ),
+  );
+  const parents = commit.parent_shas?.length ? commit.parent_shas.join(', ') : null;
+  lines.push(
+    ...wrapRendered(
+      `${context.theme.muted('父 SHA')} ${styledValue(parents, context.theme.accent, context)}`,
+      context.columns,
+      '  ',
+      '    ',
+    ),
+  );
+  if (commit.message && commit.message !== commit.title) {
+    lines.push(
+      ...wrapRendered(
+        styledValue(commit.message, context.theme.plain, context),
+        context.columns,
+        `${context.theme.muted('  消息')}  `,
+        '        ',
+      ),
+    );
   }
   return lines.join('\n');
 }
 
 function renderCommentResult(data, context) {
-  return statusCard('success', '评论已创建', [
-    ['评论', styledValue(data.comment_id, context.theme.accent, context)],
-    ['Project', styledValue(data.repo_id, context.theme.accent, context)],
-    ['MR', styledValue(mrIidText(data.mr_iid), context.theme.accent, context, true)],
-    ['严重级别', severityText(data.severity, context)],
-    ['已解决', booleanText(data.resolved, context)],
-    ['Web', linkValue(data.web_url, context)],
-  ], context);
+  return statusCard(
+    'success',
+    '评论已创建',
+    [
+      ['评论', styledValue(data.comment_id, context.theme.accent, context)],
+      ['Project', styledValue(data.repo_id, context.theme.accent, context)],
+      ['MR', styledValue(mrIidText(data.mr_iid), context.theme.accent, context, true)],
+      ['严重级别', severityText(data.severity, context)],
+      ['已解决', booleanText(data.resolved, context)],
+      ['Web', linkValue(data.web_url, context)],
+    ],
+    context,
+  );
 }
 
 function statusCard(kind, title, entries, context) {
@@ -369,7 +456,9 @@ function detailRows(entries, context) {
   const lines = [];
   for (const [label, renderedValue] of entries) {
     const prefix = `  ${context.theme.muted(pad(safeText(label), labelWidth))}  `;
-    lines.push(...wrapRendered(renderedValue, context.columns, prefix, ' '.repeat(stringWidth(prefix))));
+    lines.push(
+      ...wrapRendered(renderedValue, context.columns, prefix, ' '.repeat(stringWidth(prefix))),
+    );
   }
   return lines;
 }
@@ -383,7 +472,14 @@ function urlRows(entries, context, { skipMissing = false } = {}) {
   const lines = [];
   for (const [label, value] of rows) {
     const prefix = `  ${context.theme.muted(pad(label, labelWidth))}  `;
-    lines.push(...wrapRendered(linkValue(value, context), context.columns, prefix, ' '.repeat(stringWidth(prefix))));
+    lines.push(
+      ...wrapRendered(
+        linkValue(value, context),
+        context.columns,
+        prefix,
+        ' '.repeat(stringWidth(prefix)),
+      ),
+    );
   }
   return lines;
 }
@@ -420,7 +516,10 @@ function mrStatus(state, context) {
   if (state === 'locked') {
     return { icon: context.theme.warning('!'), text: context.theme.warning(printableState) };
   }
-  return { icon: context.theme.neutral('○'), text: styledValue(state, context.theme.muted, context) };
+  return {
+    icon: context.theme.neutral('○'),
+    text: styledValue(state, context.theme.muted, context),
+  };
 }
 
 function statusPresentation(kind, context) {
@@ -432,9 +531,10 @@ function statusPresentation(kind, context) {
 function renderHumanError(error, theme) {
   const message = safeText(error.humanMessage ?? 'CodeHub 请求失败。');
   const code = `[${safeText(error.code ?? 'HTTP_ERROR')}]`;
-  const status = error.httpStatus === null || error.httpStatus === undefined
-    ? ''
-    : theme.muted(`（HTTP ${safeText(error.httpStatus)}）`);
+  const status =
+    error.httpStatus === null || error.httpStatus === undefined
+      ? ''
+      : theme.muted(`（HTTP ${safeText(error.httpStatus)}）`);
   if (error.code === 'WRITE_RESULT_UNKNOWN') {
     return `${theme.warning('!')} ${theme.warningBold(code)} ${message}${status}`;
   }
@@ -487,15 +587,18 @@ function labelText(labels, context) {
 
 function changesText(changes, context) {
   if (!changes) return context.theme.muted('-');
-  const files = changes.files === null || changes.files === undefined
-    ? context.theme.muted('- 个文件')
-    : `${styledValue(changes.files, context.theme.accent, context)} ${context.theme.muted('个文件')}`;
-  const additions = changes.additions === null || changes.additions === undefined
-    ? context.theme.muted('+-')
-    : context.theme.success(`+${inlinePrintable(changes.additions)}`);
-  const deletions = changes.deletions === null || changes.deletions === undefined
-    ? context.theme.muted('--')
-    : context.theme.error(`-${inlinePrintable(changes.deletions)}`);
+  const files =
+    changes.files === null || changes.files === undefined
+      ? context.theme.muted('- 个文件')
+      : `${styledValue(changes.files, context.theme.accent, context)} ${context.theme.muted('个文件')}`;
+  const additions =
+    changes.additions === null || changes.additions === undefined
+      ? context.theme.muted('+-')
+      : context.theme.success(`+${inlinePrintable(changes.additions)}`);
+  const deletions =
+    changes.deletions === null || changes.deletions === undefined
+      ? context.theme.muted('--')
+      : context.theme.error(`-${inlinePrintable(changes.deletions)}`);
   return [files, additions, deletions].join(separator(context));
 }
 
@@ -532,18 +635,16 @@ function detailTime(value) {
 
 function shouldUseColor(env, isTTY) {
   if (env?.CLICOLOR_FORCE && env.CLICOLOR_FORCE !== '0') return true;
-  if (
-    Object.hasOwn(env ?? {}, 'NO_COLOR') ||
-    env?.CLICOLOR === '0' ||
-    env?.TERM === 'dumb'
-  ) return false;
+  if (Object.hasOwn(env ?? {}, 'NO_COLOR') || env?.CLICOLOR === '0' || env?.TERM === 'dumb')
+    return false;
   return isTTY;
 }
 
 function createTheme(enabled) {
-  const style = (...codes) => (value) => enabled
-    ? `\u001B[${codes.join(';')}m${value}\u001B[0m`
-    : String(value);
+  const style =
+    (...codes) =>
+    (value) =>
+      enabled ? `\u001B[${codes.join(';')}m${value}\u001B[0m` : String(value);
   return {
     enabled,
     plain: (value) => String(value),
@@ -593,7 +694,9 @@ function authorName(author) {
 
 function personName(person) {
   if (!person) return '-';
-  return person.email ? `${printable(person.name)} <${printable(person.email)}>` : printable(person.name);
+  return person.email
+    ? `${printable(person.name)} <${printable(person.email)}>`
+    : printable(person.name);
 }
 
 function authTypeName(value) {

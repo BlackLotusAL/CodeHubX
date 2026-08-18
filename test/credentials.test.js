@@ -35,7 +35,14 @@ test('损坏或不完整的凭据记录返回 AUTH_ERROR', () => {
     '{}',
     JSON.stringify({ version: 2, authentication_type: 'private_token', token: 'x' }),
     JSON.stringify({ version: 1, authentication_type: 'private_token', token: '' }),
-    JSON.stringify({ version: 1, authentication_type: 'devuc', account: 'bad-name', password: 'x', token: 'y', issued_at_ms: 1 }),
+    JSON.stringify({
+      version: 1,
+      authentication_type: 'devuc',
+      account: 'bad-name',
+      password: 'x',
+      token: 'y',
+      issued_at_ms: 1,
+    }),
   ];
   for (const record of records) {
     assert.throws(() => parseCredentialRecord(record), { code: 'AUTH_ERROR' });
@@ -61,12 +68,16 @@ test('KeyringCredentialStore 使用 service/origin 单记录并处理 NoEntry', 
       this.key = `${service}|${account}`;
     }
     getPassword() {
-      if (!FakeEntry.values.has(this.key)) throw Object.assign(new Error('NoEntry'), { code: 'NoEntry' });
+      if (!FakeEntry.values.has(this.key))
+        throw Object.assign(new Error('NoEntry'), { code: 'NoEntry' });
       return FakeEntry.values.get(this.key);
     }
-    setPassword(value) { FakeEntry.values.set(this.key, value); }
+    setPassword(value) {
+      FakeEntry.values.set(this.key, value);
+    }
     deletePassword() {
-      if (!FakeEntry.values.delete(this.key)) throw Object.assign(new Error('NoEntry'), { code: 'NoEntry' });
+      if (!FakeEntry.values.delete(this.key))
+        throw Object.assign(new Error('NoEntry'), { code: 'NoEntry' });
     }
   }
   const store = new KeyringCredentialStore({ EntryClass: FakeEntry, service: 'test-service' });
@@ -81,17 +92,27 @@ test('KeyringCredentialStore 使用 service/origin 单记录并处理 NoEntry', 
 test('KeyringCredentialStore 将后端和损坏记录错误统一为 AUTH_ERROR', async () => {
   class BrokenEntry {
     constructor() {}
-    getPassword() { throw new Error('backend unavailable'); }
-    setPassword() { throw new Error('backend unavailable'); }
-    deletePassword() { throw new Error('backend unavailable'); }
+    getPassword() {
+      throw new Error('backend unavailable');
+    }
+    setPassword() {
+      throw new Error('backend unavailable');
+    }
+    deletePassword() {
+      throw new Error('backend unavailable');
+    }
   }
   const broken = new KeyringCredentialStore({ EntryClass: BrokenEntry });
   await assert.rejects(broken.get('https://code.test'), { code: 'AUTH_ERROR' });
-  await assert.rejects(broken.save('https://code.test', privateCredential('x')), { code: 'AUTH_ERROR' });
+  await assert.rejects(broken.save('https://code.test', privateCredential('x')), {
+    code: 'AUTH_ERROR',
+  });
   await assert.rejects(broken.clear('https://code.test'), { code: 'AUTH_ERROR' });
 
   class CorruptEntry extends BrokenEntry {
-    getPassword() { return '{invalid'; }
+    getPassword() {
+      return '{invalid';
+    }
   }
   await assert.rejects(
     new KeyringCredentialStore({ EntryClass: CorruptEntry }).get('https://code.test'),

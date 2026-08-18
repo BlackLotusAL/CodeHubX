@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, posix, win32 } from 'node:path';
+import { dirname, posix, win32 } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { CliError } from './errors.js';
 
@@ -14,15 +14,17 @@ export function resolveConfigPath({
   homeDirectory = homedir(),
 } = {}) {
   if (platform === 'win32') {
-    const root = env.APPDATA && win32.isAbsolute(env.APPDATA)
-      ? env.APPDATA
-      : win32.join(homeDirectory, 'AppData', 'Roaming');
+    const root =
+      env.APPDATA && win32.isAbsolute(env.APPDATA)
+        ? env.APPDATA
+        : win32.join(homeDirectory, 'AppData', 'Roaming');
     return win32.join(root, 'codehub', 'config.json');
   }
 
-  const root = env.XDG_CONFIG_HOME && posix.isAbsolute(env.XDG_CONFIG_HOME)
-    ? env.XDG_CONFIG_HOME
-    : posix.join(homeDirectory, '.config');
+  const root =
+    env.XDG_CONFIG_HOME && posix.isAbsolute(env.XDG_CONFIG_HOME)
+      ? env.XDG_CONFIG_HOME
+      : posix.join(homeDirectory, '.config');
   return posix.join(root, 'codehub', 'config.json');
 }
 
