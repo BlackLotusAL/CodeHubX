@@ -2,10 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runCli } from '../src/cli.js';
 import {
-  DEVUC_REFRESH_LEEWAY_MS,
-  DEVUC_VALIDITY_MS,
-} from '../src/constants.js';
-import {
   MemoryCredentialStore,
   devucCredential,
   privateCredential,
@@ -285,105 +281,6 @@ test('缺少凭据时业务命令返回 AUTH_ERROR 且不创建 API client', asy
   assert.equal(capture.stdout, '');
   assert.equal(parseSingleJson(capture.stderr).code, 'AUTH_ERROR');
   assert.equal(apiCalls, 0);
-});
-
-test('未达到刷新时间直接使用旧 DevUC token且不读取 DevUC 配置', async () => {
-  const issuedAt = 1_000;
-  const rawConfig = validConfig({ devuc: { endpoint: '', appCode: '' } });
-  const store = new MemoryCredentialStore([[ORIGIN, devucCredential({
-    account: 'Agent1', password: 'password', token: 'old-token', issuedAtMs: issuedAt,
-  })]]);
-  const contexts = [];
-  const { io } = captureIo();
-  const exit = await runCli(['repo', 'list', '1'], {
-    io,
-    configStore: configStore(rawConfig),
-    credentialStore: store,
-    now: () => issuedAt + DEVUC_VALIDITY_MS - DEVUC_REFRESH_LEEWAY_MS - 1,
-    apiFactory: (options) => {
-      contexts.push(options);
-      return stubApi([], { listProjects: [] });
-    },
-  });
-  assert.equal(exit, 0);
-  assert.equal(contexts.length, 1);
-  assert.equal(contexts[0].credential.token, 'old-token');
-});
-
-test('精确刷新边界先保存新 DevUC token 再发送业务请求', async () => {
-  const issuedAt = 10_000;
-  const boundary = issuedAt + DEVUC_VALIDITY_MS - DEVUC_REFRESH_LEEWAY_MS;
-  const events = [];
-  class TrackingStore extends MemoryCredentialStore {
-    async save(origin, credential) {
-      events.push(`save:${credential.token}`);
-      return super.save(origin, credential);
-    }
-  }
-  const store = new TrackingStore([[ORIGIN, devucCredential({
-    account: 'Agent1', password: 'password', token: 'old-token', issuedAtMs: issuedAt,
-  })]]);
-  const { io } = captureIo();
-  let refreshCalls = 0;
-  const exit = await runCli(['repo', 'list', '1'], {
-    io,
-    configStore: configStore(),
-    credentialStore: store,
-    now: () => boundary,
-    apiFactory: (options) => {
-      if (options.devuc) {
-        return { devucLogin: async () => {
-          refreshCalls += 1;
-          events.push('refresh');
-          return 'new-token';
-        } };
-      }
-      assert.equal(options.credential.token, 'new-token');
-      return { listProjects: async () => {
-        events.push('business');
-        return [];
-      } };
-    },
-  });
-  assert.equal(exit, 0);
-  assert.equal(refreshCalls, 1);
-  assert.deepEqual(events, ['refresh', 'save:new-token', 'business']);
-  assert.equal((await store.get(ORIGIN)).issued_at_ms, boundary);
-});
-
-test('刷新或保存失败时不使用旧 token、不发送业务请求', async () => {
-  for (const mode of ['refresh', 'save']) {
-    const { io, capture } = captureIo();
-    let businessCalls = 0;
-    const base = new MemoryCredentialStore([[ORIGIN, devucCredential({
-      account: 'Agent1', password: 'password', token: 'old-token', issuedAtMs: 0,
-    })]]);
-    const store = mode === 'save'
-      ? {
-          get: (...args) => base.get(...args),
-          save: async () => { throw new CliError('AUTH_ERROR'); },
-        }
-      : base;
-    const exit = await runCli(['repo', 'list', '1'], {
-      io,
-      configStore: configStore(),
-      credentialStore: store,
-      now: () => DEVUC_VALIDITY_MS,
-      apiFactory: (options) => {
-        if (options.devuc) return {
-          devucLogin: async () => {
-            if (mode === 'refresh') throw new CliError('AUTH_ERROR');
-            return 'new-token';
-          },
-        };
-        businessCalls += 1;
-        return stubApi([], { listProjects: [] });
-      },
-    });
-    assert.equal(exit, 3);
-    assert.equal(parseSingleJson(capture.stderr).code, 'AUTH_ERROR');
-    assert.equal(businessCalls, 0);
-  }
 });
 
 test('参数、配置、HTTP、网络和写入未知错误保持 stdout/stderr 与退出码契约', async () => {

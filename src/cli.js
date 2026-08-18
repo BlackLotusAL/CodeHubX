@@ -1,15 +1,7 @@
 import { createApiClient } from './api.js';
-import { createConfigStore, requireCodehubConfig, requireDevucConfig } from './config.js';
-import {
-  KeyringCredentialStore,
-  devucCredential,
-  privateCredential,
-} from './credentials.js';
-import {
-  AUTH_TYPES,
-  DEVUC_REFRESH_LEEWAY_MS,
-  DEVUC_VALIDITY_MS,
-} from './constants.js';
+import { createAuthenticationSession } from './authentication.js';
+import { createConfigStore } from './config.js';
+import { KeyringCredentialStore } from './credentials.js';
 import { CliError, toCliError } from './errors.js';
 import {
   createActivity,
@@ -42,6 +34,7 @@ export async function runCli(argv, dependencies = {}) {
   const credentialStore = dependencies.credentialStore ?? new KeyringCredentialStore();
   const prompter = dependencies.prompter ?? createInteractivePrompter();
   const apiFactory = dependencies.apiFactory ?? createApiClient;
+  const authenticationFactory = dependencies.authenticationFactory ?? createAuthenticationSession;
   const activityFactory = dependencies.activityFactory ?? createActivity;
   const now = dependencies.now ?? Date.now;
   const signal = dependencies.signal;
@@ -62,18 +55,22 @@ export async function runCli(argv, dependencies = {}) {
         format: selectedFormat,
         command,
       });
+      const authentication = authenticationFactory({
+        configStore,
+        credentialStore,
+        prompter,
+        clientFactory: apiFactory,
+        timeoutMs,
+        fetchImpl: dependencies.fetchImpl,
+        now,
+        signal,
+      });
       const data = await activity.run(() => executeCommand({
         command,
         positionals,
         options: rawOptions,
-        timeoutMs,
         configStore,
-        credentialStore,
-        prompter,
-        apiFactory,
-        fetchImpl: dependencies.fetchImpl,
-        now,
-        signal,
+        authentication,
       }));
       writeSuccess(io, selectedFormat, command, data, {
         now,
@@ -98,37 +95,37 @@ async function executeCommand(context) {
     case 'config.init':
       return context.configStore.init();
     case 'auth.login':
-      return login(context);
+      return context.authentication.login();
     case 'auth.status':
-      return authStatus(context);
+      return context.authentication.status();
     case 'auth.logout':
-      return authLogout(context);
+      return context.authentication.logout();
     case 'repo.list': {
       const groupId = positiveId(context.positionals[0]);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       return projectRepoList(await api.listProjects(groupId));
     }
     case 'repo.view': {
       const projectId = positiveId(context.positionals[0]);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       return projectRepoView(await api.viewProject(projectId), projectId);
     }
     case 'mr.list': {
       const projectId = positiveId(context.options.projectId);
       const state = mergeRequestState(context.options.state);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       return projectMergeRequestList(await api.listMergeRequests(projectId, state), projectId);
     }
     case 'mr.view': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       return projectMergeRequestView(await api.viewMergeRequest(projectId, iid), projectId, iid);
     }
     case 'mr.commits': {
       const projectId = positiveId(context.options.projectId);
       const iid = positiveId(context.positionals[0]);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       return projectCommitList(await api.listMergeRequestCommits(projectId, iid));
     }
     case 'mr.comment.create': {
@@ -136,7 +133,7 @@ async function executeCommand(context) {
       const iid = positiveId(context.positionals[0]);
       const body = commentBody(context.options.body);
       const selectedSeverity = severity(context.options.severity);
-      const { api } = await authenticatedApi(context);
+      const { client: api } = await context.authentication.codehub();
       const response = await api.createMergeRequestComment(
         projectId,
         iid,
@@ -152,115 +149,6 @@ async function executeCommand(context) {
     default:
       throw new CliError('INVALID_ARGUMENT');
   }
-}
-
-async function login(context) {
-  const rawConfig = await context.configStore.load();
-  const codehub = requireCodehubConfig(rawConfig);
-
-  const authenticationType = await context.prompter.chooseAuthenticationType({
-    signal: context.signal,
-  });
-
-  if (authenticationType === AUTH_TYPES.PRIVATE_TOKEN) {
-    const token = await context.prompter.readPrivateToken({ signal: context.signal });
-    const credential = privateCredential(token);
-    await context.credentialStore.save(codehub.origin, credential);
-    return loginResult(codehub.origin, authenticationType);
-  }
-
-  if (authenticationType === AUTH_TYPES.DEVUC) {
-    const devuc = requireDevucConfig(rawConfig);
-    const values = await context.prompter.readDevucCredentials({ signal: context.signal });
-    const api = context.apiFactory({
-      devuc,
-      timeoutMs: context.timeoutMs,
-      fetchImpl: context.fetchImpl,
-      signal: context.signal,
-    });
-    const token = await api.devucLogin(values.account, values.password);
-    const credential = devucCredential({
-      account: values.account,
-      password: values.password,
-      token,
-      issuedAtMs: context.now(),
-    });
-    await context.credentialStore.save(codehub.origin, credential);
-    return loginResult(codehub.origin, authenticationType);
-  }
-
-  throw new CliError('INVALID_ARGUMENT');
-}
-
-async function authStatus(context) {
-  const codehub = await loadCodehub(context);
-  const credential = await context.credentialStore.get(codehub.origin);
-  return {
-    configured: Boolean(credential),
-    authentication_type: credential?.authentication_type ?? null,
-    api_host: codehub.origin,
-  };
-}
-
-async function authLogout(context) {
-  const codehub = await loadCodehub(context);
-  await context.credentialStore.clear(codehub.origin);
-  return {
-    credential_helper_cleared: true,
-    api_host: codehub.origin,
-  };
-}
-
-async function authenticatedApi(context) {
-  const rawConfig = await context.configStore.load();
-  const codehub = requireCodehubConfig(rawConfig);
-  let credential = await context.credentialStore.get(codehub.origin);
-  if (!credential) throw new CliError('AUTH_ERROR');
-
-  if (
-    credential.authentication_type === AUTH_TYPES.DEVUC &&
-    context.now() >= credential.issued_at_ms + DEVUC_VALIDITY_MS - DEVUC_REFRESH_LEEWAY_MS
-  ) {
-    const devuc = requireDevucConfig(rawConfig);
-    const refreshApi = context.apiFactory({
-      devuc,
-      timeoutMs: context.timeoutMs,
-      fetchImpl: context.fetchImpl,
-      signal: context.signal,
-    });
-    const token = await refreshApi.devucLogin(credential.account, credential.password);
-    credential = devucCredential({
-      account: credential.account,
-      password: credential.password,
-      token,
-      issuedAtMs: context.now(),
-    });
-    await context.credentialStore.save(codehub.origin, credential);
-  }
-
-  return {
-    api: context.apiFactory({
-      codehub,
-      credential,
-      timeoutMs: context.timeoutMs,
-      fetchImpl: context.fetchImpl,
-      signal: context.signal,
-    }),
-    credential,
-  };
-}
-
-async function loadCodehub(context) {
-  const rawConfig = await context.configStore.load();
-  return requireCodehubConfig(rawConfig);
-}
-
-function loginResult(origin, authenticationType) {
-  return {
-    configured: true,
-    authentication_type: authenticationType,
-    api_host: origin,
-  };
 }
 
 function inferOutput(argv) {
