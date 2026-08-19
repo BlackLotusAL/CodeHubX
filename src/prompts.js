@@ -44,7 +44,7 @@ export function createInteractivePrompter({
               validate: (value) =>
                 validatePrompt(value, privateToken, 'Token 不能为空或包含换行符'),
             },
-            promptContext(input, terminal.stream, signal),
+            promptContext(input, terminal.stream, signal, false),
           );
         } finally {
           terminal.close?.();
@@ -71,7 +71,7 @@ export function createInteractivePrompter({
               validate: (candidate) =>
                 validatePrompt(candidate, devucPassword, '密码不能为空或包含换行符'),
             },
-            promptContext(input, terminal.stream, signal),
+            promptContext(input, terminal.stream, signal, false),
           );
           return { account, password: value };
         } finally {

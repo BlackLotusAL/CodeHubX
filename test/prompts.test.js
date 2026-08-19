@@ -41,9 +41,10 @@ test('登录提示使用选择、掩码输入、自定义流和 AbortSignal', as
   assert.equal(calls[0].context.output, ttyOutput);
   assert.equal(calls[0].context.signal, controller.signal);
   assert.equal(calls[0].context.clearPromptOnDone, true);
+  assert.equal(calls[1].context.clearPromptOnDone, false);
 });
 
-test('DevUC 账号明文保留、密码掩码清除且提示层执行校验', async () => {
+test('DevUC 账号明文保留、密码掩码保留且提示层执行校验', async () => {
   const calls = [];
   const prompter = createInteractivePrompter({
     input: ttyInput,
@@ -71,7 +72,7 @@ test('DevUC 账号明文保留、密码掩码清除且提示层执行校验', as
   assert.equal(typeof calls[0].options.validate('bad-name'), 'string');
   assert.equal(calls[1].kind, 'password');
   assert.equal(calls[1].options.mask, true);
-  assert.equal(calls[1].context.clearPromptOnDone, true);
+  assert.equal(calls[1].context.clearPromptOnDone, false);
   assert.equal(calls[1].options.validate('password'), true);
   assert.equal(typeof calls[1].options.validate(''), 'string');
 });

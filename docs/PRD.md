@@ -91,8 +91,8 @@ codehub auth login
 
 - 登录必须在带 TTY 的终端中执行。
 - CLI 提供 Private Token 和 DevUC 两种认证方式。
-- Private Token 为空或包含换行符时在本地拒绝。
-- DevUC 登录依次输入账号和密码；账号必须由字母和数字组成，使用明文输入，并在回车后保留提示和当前账号；密码使用掩码输入且完成后清除提示。
+- Private Token 使用掩码输入，为空或包含换行符时在本地拒绝；回车后保留提示和掩码。
+- DevUC 登录依次输入账号和密码；账号必须由字母和数字组成，使用明文输入，并在回车后保留提示和当前账号；密码使用掩码输入，回车后保留提示和掩码。
 - DevUC 登录调用授权接口并读取响应中的 result.newToken。
 - 授权响应缺少有效 newToken 时返回 AUTH_ERROR。
 - Ctrl+C 取消登录时返回 CANCELLED。
@@ -288,7 +288,7 @@ X-Auth-token: <newToken>
 
 ## 7. 安全要求
 
-- Private Token 和 DevUC 密码在登录向导中使用掩码输入。
+- Private Token 和 DevUC 密码在登录向导中使用掩码输入，提交后保留提示和掩码。
 - DevUC 账号使用明文输入，提交后保留提示和当前账号，因此账号会进入终端滚动记录。
 - 认证秘密不得通过命令参数或环境变量输入；CLI 自身生成的状态和错误结果不得包含密码、token 或 AppCode。
 - CLI 不对成功结果执行敏感字符串替换或 URL userinfo 移除；API 提供方负责确保返回字段适合直接输出，调用方负责保护管道、重定向和 CI 日志。
