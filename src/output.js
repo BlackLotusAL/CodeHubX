@@ -1,5 +1,6 @@
 import stringWidth from 'string-width';
 import wrapAnsi from 'wrap-ansi';
+import { SUCCESS_ICON } from './constants.js';
 import { errorResult } from './errors.js';
 
 const DEFAULT_COLUMNS = 100;
@@ -508,7 +509,7 @@ function mrStatus(state, context) {
     return { icon: context.theme.success('●'), text: context.theme.success(printableState) };
   }
   if (state === 'merged') {
-    return { icon: context.theme.merged('✓'), text: context.theme.merged(printableState) };
+    return { icon: context.theme.merged(SUCCESS_ICON), text: context.theme.merged(printableState) };
   }
   if (state === 'closed') {
     return { icon: context.theme.error('✗'), text: context.theme.error(printableState) };
@@ -523,7 +524,7 @@ function mrStatus(state, context) {
 }
 
 function statusPresentation(kind, context) {
-  if (kind === 'success') return { icon: context.theme.success('✓') };
+  if (kind === 'success') return { icon: context.theme.success(SUCCESS_ICON) };
   if (kind === 'warning') return { icon: context.theme.warning('!') };
   return { icon: context.theme.neutral('○') };
 }

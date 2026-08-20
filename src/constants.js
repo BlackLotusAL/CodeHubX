@@ -1,5 +1,6 @@
 export const CLI_NAME = 'codehub';
 export const CLI_VERSION = '0.1.0';
+export const SUCCESS_ICON = '✓';
 
 export const AUTH_TYPES = Object.freeze({
   PRIVATE_TOKEN: 'private_token',

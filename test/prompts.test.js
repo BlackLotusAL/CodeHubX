@@ -37,6 +37,7 @@ test('登录提示使用选择、掩码输入、自定义流和 AbortSignal', as
     ['private_token', 'devuc'],
   );
   assert.equal(calls[1].options.mask, true);
+  assert.equal(calls[1].options.theme.prefix.done, '✓');
   assert.equal(calls[0].context.input, ttyInput);
   assert.equal(calls[0].context.output, ttyOutput);
   assert.equal(calls[0].context.signal, controller.signal);
@@ -68,10 +69,12 @@ test('DevUC 账号明文保留、密码掩码保留且提示层执行校验', as
   assert.equal(calls[0].kind, 'input');
   assert.equal('mask' in calls[0].options, false);
   assert.equal(calls[0].context.clearPromptOnDone, false);
+  assert.equal(calls[0].options.theme.prefix.done, '✓');
   assert.equal(calls[0].options.validate('Agent01'), true);
   assert.equal(typeof calls[0].options.validate('bad-name'), 'string');
   assert.equal(calls[1].kind, 'password');
   assert.equal(calls[1].options.mask, true);
+  assert.equal(calls[1].options.theme.prefix.done, '✓');
   assert.equal(calls[1].context.clearPromptOnDone, false);
   assert.equal(calls[1].options.validate('password'), true);
   assert.equal(typeof calls[1].options.validate(''), 'string');
