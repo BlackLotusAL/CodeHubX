@@ -1,13 +1,10 @@
 import { openSync } from 'node:fs';
 import { WriteStream } from 'node:tty';
+import { styleText } from 'node:util';
 import { input as textInput, password, select } from '@inquirer/prompts';
 import { AUTH_TYPES, SUCCESS_ICON } from './constants.js';
 import { CliError } from './errors.js';
 import { devucAccount, devucPassword, privateToken } from './validation.js';
-
-const COMPLETED_INPUT_THEME = Object.freeze({
-  prefix: Object.freeze({ done: SUCCESS_ICON }),
-});
 
 export function createInteractivePrompter({
   input = process.stdin,
@@ -41,11 +38,12 @@ export function createInteractivePrompter({
         const terminal = output ? { stream: output } : openTerminalOutput();
         assertInteractive(input, terminal.stream);
         try {
+          const theme = completedInputTheme(terminal.stream);
           return await promptApi.password(
             {
               message: '请输入 Private Token',
               mask: true,
-              theme: COMPLETED_INPUT_THEME,
+              theme,
               validate: (value) =>
                 validatePrompt(value, privateToken, 'Token 不能为空或包含换行符'),
             },
@@ -62,10 +60,11 @@ export function createInteractivePrompter({
         const terminal = output ? { stream: output } : openTerminalOutput();
         assertInteractive(input, terminal.stream);
         try {
+          const theme = completedInputTheme(terminal.stream);
           const account = await promptApi.input(
             {
               message: '请输入 DevUC 账号',
-              theme: COMPLETED_INPUT_THEME,
+              theme,
               validate: (value) => validatePrompt(value, devucAccount, '账号只能包含字母和数字'),
             },
             promptContext(input, terminal.stream, signal, false),
@@ -74,7 +73,7 @@ export function createInteractivePrompter({
             {
               message: '请输入 DevUC 密码',
               mask: true,
-              theme: COMPLETED_INPUT_THEME,
+              theme,
               validate: (candidate) =>
                 validatePrompt(candidate, devucPassword, '密码不能为空或包含换行符'),
             },
@@ -86,6 +85,12 @@ export function createInteractivePrompter({
         }
       });
     },
+  };
+}
+
+function completedInputTheme(stream) {
+  return {
+    prefix: { done: styleText('green', SUCCESS_ICON, { stream }) },
   };
 }
 

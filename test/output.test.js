@@ -74,6 +74,30 @@ test('颜色只在允许时输出且 CLICOLOR_FORCE 优先', () => {
   }
 });
 
+test('成功与失败图标使用统一字形和语义色', () => {
+  const io = { columns: 100, env: { CLICOLOR_FORCE: '1' }, stdoutIsTTY: false };
+  const authentication = renderHuman(
+    'auth.login',
+    {
+      configured: true,
+      authentication_type: 'private_token',
+      api_host: 'https://code.test',
+    },
+    { io },
+  );
+  assert.match(authentication, /^\u001B\[32m✓\u001B\[0m/);
+
+  const closedMergeRequest = renderHuman('mr.view', { ...mr, state: 'closed' }, { io });
+  assert.match(closedMergeRequest, /^\u001B\[31m✗\u001B\[0m/);
+
+  const { io: errorIo, capture } = captureIo({
+    stderrIsTTY: false,
+    env: { CLICOLOR_FORCE: '1' },
+  });
+  writeFailure(errorIo, 'human', new CliError('AUTH_ERROR'));
+  assert.match(capture.stderr, /^\u001B\[31m✗\u001B\[0m/);
+});
+
 test('repo human 输出对齐 SSH/HTTPS 并适配窄终端', () => {
   const output = renderHuman('repo.list', [repo], {
     io: { columns: 60, env: {}, stdoutIsTTY: false },

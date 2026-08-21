@@ -1,6 +1,6 @@
 import stringWidth from 'string-width';
 import wrapAnsi from 'wrap-ansi';
-import { SUCCESS_ICON } from './constants.js';
+import { FAILURE_ICON, SUCCESS_ICON } from './constants.js';
 import { errorResult } from './errors.js';
 
 const DEFAULT_COLUMNS = 100;
@@ -512,7 +512,10 @@ function mrStatus(state, context) {
     return { icon: context.theme.merged(SUCCESS_ICON), text: context.theme.merged(printableState) };
   }
   if (state === 'closed') {
-    return { icon: context.theme.error('✗'), text: context.theme.error(printableState) };
+    return {
+      icon: context.theme.error(FAILURE_ICON),
+      text: context.theme.error(printableState),
+    };
   }
   if (state === 'locked') {
     return { icon: context.theme.warning('!'), text: context.theme.warning(printableState) };
@@ -542,7 +545,7 @@ function renderHumanError(error, theme) {
   if (error.code === 'CANCELLED') {
     return `${theme.neutral('○')} ${theme.muted(code)} ${message}${status}`;
   }
-  return `${theme.error('✗')} ${theme.errorBold(code)} ${message}${status}`;
+  return `${theme.error(FAILURE_ICON)} ${theme.errorBold(code)} ${message}${status}`;
 }
 
 function styledValue(value, style, context, alreadySafe = false) {
