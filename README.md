@@ -74,6 +74,14 @@ codehub auth login
 codehub mr view 17 --project-id 9001 --output human
 ```
 
+## AI Agent Skill
+
+仓库提供开放 Agent Skills 格式的 [`codehub-cli` Skill](skills/codehub-cli/SKILL.md)，用于指导 AI Agent 安全、可靠地调用 CodeHub CLI。
+
+先按上文安装 `codehub`，再将整个 `skills/codehub-cli` 目录复制或导入目标 Agent 支持的 Skill 目录。具体安装位置和调用方式以该 Agent 的文档为准。当前 Skill 仅随源码仓库提供，不包含在 npm 安装包中。
+
+Skill 应与同一仓库修订版的 CLI 配套使用；升级 CLI 时也应同步更新 Skill。安装后的 Skill 名称为 `codehub-cli`。
+
 ## 核心命令
 
 | 能力          | 命令                                                                                                                   | 说明                                  |
